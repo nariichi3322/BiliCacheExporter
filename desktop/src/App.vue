@@ -221,9 +221,13 @@ async function saveOutput() {
     fail(e)
   }
 }
+let toolCheck = 0
 async function checkTools() {
+  // An older check finishing late must not overwrite the result for newer settings.
+  const current = ++toolCheck
   try {
-    s.tools = await api.checkTools()
+    const tools = await api.checkTools()
+    if (current === toolCheck) s.tools = tools
   } catch (e) {
     fail(e)
   }

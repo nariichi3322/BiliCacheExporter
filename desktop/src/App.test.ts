@@ -124,6 +124,20 @@ describe('compact list', () => {
     expect(w.find('pre.logs').exists()).toBe(true)
   })
 
+  it('a late, older tool check does not overwrite a newer result', async () => {
+    let releaseFirst!: (v: unknown) => void
+    let n = 0
+    handlers.check_tools = () => (++n === 1 ? new Promise(r => { releaseFirst = r }).then(() => [{ kind: 'ADB', path: 'x', ok: false, message: '找不到 ADB' }]) : [{ kind: 'ADB', path: 'x', ok: true, message: 'Android Debug Bridge version 1.0.41' }])
+    const w = await start()
+    await w.findAll('button').find(b => b.text().includes('設定'))!.trigger('click')
+    await w.findAll('button').find(b => b.text() === '儲存設定')!.trigger('click')
+    await flushPromises()
+    releaseFirst(null)
+    await flushPromises()
+    expect(w.text()).toContain('Android Debug Bridge')
+    expect(w.text()).not.toContain('找不到 ADB')
+  })
+
   it('missing tools open the download guide with real package facts and retry', async () => {
     handlers.connect = () => { throw { message: '缺少必要工具：ADB', cancelled: false, missing: ['adb'] } }
     handlers.download_tools = () => { throw { message: '下載失敗：offline', cancelled: false, missing: [] } }
