@@ -125,7 +125,8 @@ async function launch(dir, env = {}) {
       await sleep(500)
     },
   }
-  await app.waitFor("document.querySelector('.device') !== null")
+  // Settings arrive after first render (the real window stays hidden until then); wait like a user would.
+  await app.waitFor("!!document.querySelector('input[aria-label=輸出資料夾]')?.value")
   return app
 }
 
@@ -328,7 +329,8 @@ await app.close()
   await m.waitFor("document.body.innerText.includes('必要工具與位置')")
   await m.eval(`(() => { const i = document.querySelector('input[aria-label^="ADB"]'); i.value = ${JSON.stringify(path.join(own, 'adb.exe'))}; i.dispatchEvent(new Event('input')); })()`)
   await m.click('儲存設定')
-  check(await m.waitFor("document.body.innerText.includes('設定已儲存') && document.body.innerText.includes('Android Debug Bridge')", 15000), 'Manual ADB path saved from settings and validated by running it')
+  const savedOk = await m.waitFor("document.body.innerText.includes('設定已儲存') && document.body.innerText.includes('Android Debug Bridge')", 15000)
+  check(savedOk, 'Manual ADB path saved from settings and validated by running it', savedOk ? '' : (await m.eval("document.querySelector('main').innerText")).slice(0, 600))
   check(JSON.parse(fs.readFileSync(path.join(manualDir, 'settings.json'), 'utf8')).Adb === path.join(own, 'adb.exe'), 'Manual path outside the folder stored as entered')
   await m.click('返回影片')
   await m.click('連線')

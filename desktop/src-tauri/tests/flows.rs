@@ -509,6 +509,12 @@ fn reserved_and_long_names_are_safe() {
     let remote = phone.add("1/c_1", &long, &["80"], true);
     let r = direct_export(phone, &remote, &out, None).unwrap();
     assert!(Path::new(&r.path).file_stem().unwrap().to_string_lossy().chars().count() <= 110);
+    // Deep output folder + long title: the final path exceeds MAX_PATH (260) and must still be written.
+    let deep = out.join("深".repeat(60)).join("層".repeat(60));
+    let mut phone = Phone::one_device();
+    let remote = phone.add("1/c_1", &long, &["80"], true);
+    let r = direct_export(phone, &remote, &deep, None).unwrap();
+    assert!(r.path.encode_utf16().count() > 260 && Path::new(&r.path).exists(), "{}", r.path.len());
 }
 
 // ---------- 04/06: disconnect, cancel, batch, retry, recovery ----------

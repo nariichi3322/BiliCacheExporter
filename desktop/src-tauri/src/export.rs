@@ -289,8 +289,18 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
 fn move_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
-    let w = |p: &Path| p.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
-    if unsafe { MoveFileExW(w(from).as_ptr(), w(to).as_ptr(), 0) } == 0 {
+    // Raw Win32 calls are limited to MAX_PATH unless given the `\\?\` form (std adds it itself; we must too).
+    let w = |p: &Path| -> std::io::Result<Vec<u16>> {
+        let full = std::path::absolute(p)?.to_string_lossy().into_owned();
+        let long = match full.strip_prefix(r"\\") {
+            _ if full.starts_with(r"\\?\") => full,
+            Some(unc) => format!(r"\\?\UNC\{unc}"),
+            None => format!(r"\\?\{full}"),
+        };
+        Ok(std::ffi::OsStr::new(&long).encode_wide().chain(std::iter::once(0)).collect())
+    };
+    let (from, to) = (w(from)?, w(to)?);
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0) } == 0 {
         return Err(std::io::Error::last_os_error());
     }
     Ok(())
