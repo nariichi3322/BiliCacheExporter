@@ -86,8 +86,8 @@ try {
     $wvTitle = $p.MainWindowTitle
     $wvChildren = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)").Count
     # Answer 「否」: the app must exit (code 2) without writing anything.
-    $shell = New-Object -ComObject WScript.Shell
-    if ($shell.AppActivate($p.Id)) { Start-Sleep -Milliseconds 300; $shell.SendKeys('n') }
+    Add-Type 'using System; using System.Runtime.InteropServices; public static class Dlg { [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l); }'
+    [Dlg]::SendMessage($p.MainWindowHandle, 0x0111, [IntPtr]7, [IntPtr]::Zero) | Out-Null  # WM_COMMAND, IDNO
     if (!$p.WaitForExit(10000)) { $p.Kill(); $p.WaitForExit(); throw 'WebView2 guidance did not close on 否.' }
     $wvExit = $p.ExitCode
     $wvWrote = @(Get-ChildItem -LiteralPath $wvDir -Name | Where-Object { $_ -notin @('BiliCacheExporter.exe', 'empty-runtime') })
