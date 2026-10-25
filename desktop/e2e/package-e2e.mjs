@@ -65,6 +65,7 @@ function makeFolder(name, { tools }) {
 
 // ---------- app driver ----------
 let port = 9330
+const requests = []
 async function launch(dir, env = {}) {
   port += 1
   const child = spawn(path.join(dir, 'BiliCacheExporter.exe'), [], {
@@ -90,8 +91,13 @@ async function launch(dir, env = {}) {
       pending.get(msg.id)(msg)
       pending.delete(msg.id)
     }
+    if (msg.method === 'Network.requestWillBeSent') requests.push(msg.params.request.url)
   })
   const send = (method, params = {}) => new Promise(r => { id += 1; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })) })
+  await send('Network.enable')
+  // The page was already loaded before we attached; reload once so its own resource loads are recorded too.
+  await send('Runtime.evaluate', { expression: 'window.__beforeReload = true' })
+  await send('Page.reload')
   const app = {
     child,
     send,
@@ -126,7 +132,7 @@ async function launch(dir, env = {}) {
     },
   }
   // Settings arrive after first render (the real window stays hidden until then); wait like a user would.
-  await app.waitFor("!!document.querySelector('input[aria-label=輸出資料夾]')?.value")
+  await app.waitFor("!window.__beforeReload && !!document.querySelector('input[aria-label=輸出資料夾]')?.value")
   return app
 }
 
@@ -309,7 +315,8 @@ await app.close()
   fs.rmSync(dir, { recursive: true, force: true })
   const m = await launch(moved)
   await m.click('設定')
-  check(await m.waitFor("document.body.innerText.includes('Android Debug Bridge')", 15000), 'Moved folder: bundled-tool path still validates')
+  const movedOk = await m.waitFor("document.body.innerText.includes('Android Debug Bridge')", 15000)
+  check(movedOk, 'Moved folder: bundled-tool path still validates', movedOk ? '' : (await m.eval("document.querySelector('main').innerText")).slice(0, 500))
   await m.click('返回影片')
   await m.click('連線')
   check(await m.waitFor("document.querySelectorAll('li.row').length === 4"), 'Moved folder: connect and scan work')
@@ -348,6 +355,8 @@ await app.close()
   await ra.close()
 }
 
+const remote = [...new Set(requests)].filter(u => !/^(https?:\/\/(tauri|ipc)\.localhost\/|data:|blob:|about:)/.test(u))
+check(requests.length > 0 && remote.length === 0, 'WebView loaded nothing outside the app (no remote page/CDN) across all runs', `${requests.length} requests; outside: ${remote.join(' ')}`)
 fs.writeFileSync(path.join(evidence, 'e2e-results.json'), JSON.stringify({ when: new Date().toISOString(), devicePixelRatio: dpr, isFakePhone: true, realFfmpeg: true, results }, null, 2))
 const failed = results.filter(r => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} passed; DPR ${dpr}`)
