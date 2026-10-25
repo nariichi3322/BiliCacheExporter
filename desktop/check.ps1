@@ -7,6 +7,7 @@ Push-Location $PSScriptRoot
 try {
     if (!(Test-Path 'node_modules')) { npm ci; if ($LASTEXITCODE) { throw 'npm ci failed' } }
     npx vue-tsc --noEmit; if ($LASTEXITCODE) { throw 'Type check failed' }
+    foreach ($script in Get-ChildItem 'e2e\*.mjs') { node --check $script.FullName; if ($LASTEXITCODE) { throw "Syntax error in $($script.Name)" } }
     npx vitest run; if ($LASTEXITCODE) { throw 'UI tests failed' }
     Push-Location 'src-tauri'
     try {
