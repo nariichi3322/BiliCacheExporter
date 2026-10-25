@@ -1,0 +1,98 @@
+/* Compact-list design from the approved prototype: dark + blue by default, full light theme. */
+:root {
+  --bg: #0c111a; --surface: #141c29; --raised: #1b2637; --line: #2a374a; --text: #e9eef9; --muted: #a3b1c7;
+  --blue: #6aa8ff; --button: #2868da; --good: #7ee0b5; --warn: #ffd18c; --danger: #ff9a9a;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f4f7fc; --surface: #fff; --raised: #e9eff8; --line: #c9d4e4; --text: #17263d; --muted: #4d5f79;
+  --blue: #245fc0; --button: #245fc0; --good: #17744f; --warn: #875100; --danger: #b42318;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 "Segoe UI", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--raised); border-radius: 9px; padding: 7px 14px; min-height: 36px; cursor: pointer; }
+button:hover:not(:disabled) { filter: brightness(1.12); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--button); border-color: var(--button); color: #fff; font-weight: 600; }
+button.primary-outline { border-color: var(--button); }
+button.quiet { background: transparent; border-color: transparent; }
+button.icon { display: inline-flex; align-items: center; gap: 7px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+input:not([type="checkbox"]), select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 0; max-width: 100%; }
+input:disabled, select:disabled { opacity: .6; }
+input[type="checkbox"] { accent-color: var(--button); width: 17px; height: 17px; flex-shrink: 0; margin: 0; }
+h2, h3, p { margin: 0; }
+h2 { font-size: 22px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+small, .small { font-size: 12px; }
+small { color: var(--muted); }
+.muted { color: var(--muted); }
+.good { color: var(--good); }
+.warning { color: var(--warn); }
+.accent { color: var(--blue); }
+.spacer { flex: 1; }
+.actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.actions.end { justify-content: flex-end; display: flex; }
+
+.chrome { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.logo { display: grid; place-items: center; width: 32px; height: 32px; background: var(--button); color: #fff; border-radius: 9px; font-weight: 700; font-size: 17px; }
+.brand { font-weight: 600; }
+.content { padding: 20px; position: relative; max-width: 1200px; margin: 0 auto; }
+.heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.notice { margin: 0 0 14px; padding: 9px 14px; border-radius: 8px; background: var(--raised); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
+.notice.error { border: 1px solid var(--danger); color: var(--text); }
+
+.device { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.device-icon { color: var(--blue); width: 22px; height: 22px; }
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.toolbar label { display: flex; align-items: center; gap: 7px; }
+.rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.row { display: flex; gap: 14px; align-items: flex-start; padding: 11px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+.row:last-child { border-bottom: 0; }
+.row > input[type="checkbox"] { margin-top: 13px; }
+.row.selected { background: color-mix(in srgb, var(--button) 14%, var(--surface)); }
+.row.invalid .title { color: var(--muted); }
+.info { flex: 1; min-width: 0; }
+.title { font-weight: 500; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.meta select { font-size: 12px; padding: 3px 6px; max-width: 100%; }
+.thumb { width: 76px; height: 44px; flex-shrink: 0; border-radius: 7px; object-fit: cover; background: var(--raised); color: var(--muted); display: grid; place-items: center; font-size: 11px; }
+.size { color: var(--muted); font-size: 12px; white-space: nowrap; margin-top: 11px; }
+details { margin-top: 4px; font-size: 12px; color: var(--muted); }
+summary { cursor: pointer; width: fit-content; }
+.inventory { font: 12px/1.7 Consolas, "Microsoft JhengHei UI", monospace; overflow-wrap: anywhere; padding: 4px 0 2px 2px; }
+.empty { min-height: 260px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; text-align: center; padding: 25px; }
+
+.output { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.path { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 3px; }
+.path > input { width: 100%; }
+.path-row { display: flex; gap: 8px; }
+.path-row input { flex: 1; }
+.progress-box { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.progress-caption { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+progress { width: 100%; height: 7px; accent-color: var(--button); display: block; border: 0; border-radius: 5px; overflow: hidden; background: var(--raised); }
+progress::-webkit-progress-bar { background: var(--raised); }
+progress::-webkit-progress-value { background: var(--button); border-radius: 5px; }
+
+.footer { margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.footer button { font-size: 12px; min-height: 28px; padding: 3px 8px; }
+.logs { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font: 12px/1.7 Consolas, "Microsoft JhengHei UI", monospace; background: var(--surface); border: 1px solid var(--line); padding: 12px; border-radius: 8px; margin: 8px 0 0; max-height: 280px; overflow: auto; }
+
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.full { grid-column: 1 / -1; }
+.tools-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.scrim { position: fixed; inset: 0; background: #050b1699; display: flex; align-items: flex-start; justify-content: center; padding: 50px 16px; z-index: 2; overflow: auto; }
+.dialog { width: 480px; max-width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; box-shadow: 0 20px 65px #0006; display: flex; flex-direction: column; gap: 12px; }
+
+@media (max-width: 720px) {
+  .content { padding: 14px; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .thumb { display: none; }
+  .row { gap: 10px; padding: 10px 12px; }
+  .size { white-space: normal; }
+}

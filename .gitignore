@@ -1,0 +1,17 @@
+bin/
+obj/
+.dotnet/
+.vs/
+artifacts/
+.build-cache/
+dist/
+settings.json
+session-*.log
+self-test-results.txt
+*.user
+*.partial.mp4
+.check-local.psd1
+node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+dist-desktop/

@@ -1,0 +1,161 @@
+<!-- Throwaway UI prototype: compare a compact list, a visual library, and a split workspace. All data and operations are simulated; no device, download, filesystem, or persistence access. -->
+<div id="bce-prototype">
+  <div class="viz-carousel" aria-label="BiliCacheExporter 介面方案" data-previous-label="上一個方案" data-next-label="下一個方案">
+    <section data-variant="精簡清單" aria-label="精簡清單"><div class="bce-app" data-layout="list"></div></section>
+    <section data-variant="封面書庫" aria-label="封面書庫" hidden><div class="bce-app" data-layout="library"></div></section>
+    <section data-variant="分欄工作台" aria-label="分欄工作台" hidden><div class="bce-app" data-layout="split"></div></section>
+  </div>
+</div>
+<style>
+#bce-prototype {font:14px/1.6 "Segoe UI","Microsoft JhengHei",sans-serif;color:#e9eef9}
+#bce-prototype * {box-sizing:border-box}
+#bce-prototype .bce-app {--bg:#0c111a;--surface:#141c29;--raised:#1b2637;--line:#2a374a;--text:#e9eef9;--muted:#a3b1c7;--blue:#6aa8ff;--button:#2868da;--good:#7ee0b5;--warn:#ffd18c;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:18px;min-height:790px;overflow:hidden;color-scheme:dark}
+#bce-prototype .bce-app[data-theme="light"] {--bg:#f4f7fc;--surface:#fff;--raised:#e9eff8;--line:#d5deeb;--text:#17263d;--muted:#53657f;--blue:#245fc0;--button:#245fc0;--good:#17744f;--warn:#875100;color-scheme:light}
+#bce-prototype button,#bce-prototype input,#bce-prototype select {font:inherit;color:inherit}
+#bce-prototype button {border:1px solid var(--line);background:var(--raised);border-radius:9px;padding:9px 15px;min-height:40px}
+#bce-prototype button:hover:not(:disabled){filter:brightness(1.15)}
+#bce-prototype button:disabled {opacity:.45;cursor:not-allowed}
+#bce-prototype button.primary {background:var(--button);border-color:var(--button);color:#fff;font-weight:600}
+#bce-prototype button.quiet {background:transparent;border-color:transparent}
+#bce-prototype button.icon {padding:8px 11px;display:inline-flex;align-items:center;gap:7px}
+#bce-prototype input:not([type="checkbox"]),#bce-prototype select {background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;min-width:0;max-width:100%}
+#bce-prototype input[type="checkbox"] {accent-color:var(--button);width:17px;height:17px;flex-shrink:0}
+#bce-prototype h2,#bce-prototype h3,#bce-prototype p {margin:0}
+#bce-prototype h2 {font-size:23px;font-weight:600;letter-spacing:-.5px}
+#bce-prototype h3 {font-size:17px;font-weight:600}
+#bce-prototype small {font-size:12px;color:var(--muted)}
+#bce-prototype .muted {color:var(--muted)}
+#bce-prototype .chrome {display:flex;align-items:center;gap:11px;padding:18px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#bce-prototype .logo {display:grid;place-items:center;width:34px;height:34px;background:var(--button);color:#fff;border-radius:10px;font-weight:700;font-size:18px}
+#bce-prototype .brand {font-weight:600;letter-spacing:.2px}
+#bce-prototype .spacer {flex:1}
+#bce-prototype .tag {padding:3px 8px;border-radius:6px;background:var(--raised);color:var(--muted);font-size:12px}
+#bce-prototype .content {padding:24px;position:relative}
+#bce-prototype .heading {display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:22px}
+#bce-prototype .device {background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:23px}
+#bce-prototype .device-icon {color:var(--blue);display:flex}
+#bce-prototype .status {color:var(--good);font-size:12px}
+#bce-prototype .warning {color:var(--warn)}
+#bce-prototype .toolbar {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+#bce-prototype .toolbar label {display:flex;align-items:center;gap:7px}
+#bce-prototype .rows {border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+#bce-prototype .row {display:flex;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);min-width:0}
+#bce-prototype .row:last-child {border-bottom:0}
+#bce-prototype .row.selected {background:color-mix(in srgb,var(--button) 12%,var(--surface))}
+#bce-prototype .row label {display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+#bce-prototype .title {font-weight:500;overflow-wrap:anywhere}
+#bce-prototype .meta {color:var(--muted);font-size:12px;margin-top:4px}
+#bce-prototype .thumb {width:68px;height:44px;flex-shrink:0;border-radius:7px;background:linear-gradient(135deg,var(--raised),color-mix(in srgb,var(--blue) 25%,var(--surface)));color:var(--blue);display:grid;place-items:center;font-size:12px;letter-spacing:2px}
+#bce-prototype .size {color:var(--muted);font-size:12px;white-space:nowrap}
+#bce-prototype .output {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:22px;padding-top:19px;border-top:1px solid var(--line)}
+#bce-prototype .path {flex:1;min-width:150px}
+#bce-prototype .path input {width:100%;margin-top:4px}
+#bce-prototype .progress-box {margin-top:17px;background:var(--surface);border-radius:10px;padding:14px 16px}
+#bce-prototype .progress-caption {display:flex;justify-content:space-between;gap:10px;margin-bottom:10px}
+#bce-prototype progress {width:100%;height:7px;accent-color:var(--button);display:block;border:0;border-radius:5px;overflow:hidden;background:var(--raised)}
+#bce-prototype progress::-webkit-progress-bar {background:var(--raised)}
+#bce-prototype progress::-webkit-progress-value {background:var(--button);border-radius:5px}
+#bce-prototype .footer {margin-top:15px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px}
+#bce-prototype .footer button {font-size:12px;min-height:30px;padding:3px 8px}
+#bce-prototype .empty {min-height:310px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;text-align:center;padding:25px}
+#bce-prototype .empty i {color:var(--blue)}
+#bce-prototype .settings-grid {display:grid;grid-template-columns:1fr 1fr;gap:18px}
+#bce-prototype .panel {border:1px solid var(--line);border-radius:13px;background:var(--surface);padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+#bce-prototype .setting {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+#bce-prototype .full {grid-column:1/-1}
+#bce-prototype .tools-row {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+#bce-prototype .tools-row:last-of-type {border-bottom:0}
+#bce-prototype .notice {margin:0 0 16px;padding:10px 14px;border-radius:8px;background:var(--raised);color:var(--text)}
+#bce-prototype .logs {white-space:pre-wrap;color:var(--muted);font:12px/1.8 Consolas,monospace;background:var(--surface);padding:12px;border-radius:8px;margin-top:10px}
+#bce-prototype .scrim {position:absolute;inset:0;background:#050b167a;display:flex;align-items:flex-start;justify-content:center;padding:60px 18px;z-index:2;border-radius:0 0 16px 16px}
+#bce-prototype .dialog {width:430px;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:25px;box-shadow:0 20px 65px #0005;display:flex;flex-direction:column;gap:17px}
+#bce-prototype .dialog-actions {display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+#bce-prototype .library .rows {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;background:transparent;border:0;overflow:visible}
+#bce-prototype .library .row {display:block;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+#bce-prototype .library .row label {display:flex;align-items:flex-start;padding:14px;gap:9px}
+#bce-prototype .library .thumb {width:100%;height:83px;border-radius:0;font-size:16px}
+#bce-prototype .library .size {display:block;padding:0 14px 12px}
+#bce-prototype .library .row label .thumb {display:none}
+#bce-prototype .mobile-output {display:none}
+#bce-prototype .workspace {display:grid;grid-template-columns:230px minmax(0,1fr);gap:23px}
+#bce-prototype .sidebar {border-right:1px solid var(--line);padding-right:22px;display:flex;flex-direction:column;gap:20px}
+#bce-prototype .sidebar .device {display:flex;flex-direction:column;align-items:stretch;margin:0;padding:16px;gap:12px}
+#bce-prototype .sidebar .device .spacer {display:none}
+#bce-prototype .sidebar .device select {width:100%}
+#bce-prototype .sidebar .output {display:flex;flex-direction:column;align-items:stretch;margin:0;padding-top:18px}
+#bce-prototype .sidebar .path {min-width:0}
+#bce-prototype .sidebar-note {margin-top:auto;color:var(--muted);font-size:12px}
+#bce-prototype .scenario {padding:10px 24px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);color:var(--muted);font-size:12px}
+#bce-prototype .scenario select {padding:5px 8px;font-size:12px}
+@media(max-width:760px){#bce-prototype .mobile-output{display:block}#bce-prototype .content{padding:18px}#bce-prototype .chrome{padding:14px 18px}#bce-prototype .workspace{grid-template-columns:1fr}#bce-prototype .sidebar{border-right:0;padding:0}#bce-prototype .sidebar .device{flex-direction:row;align-items:center;flex-wrap:wrap}#bce-prototype .sidebar .output{display:none}#bce-prototype .sidebar-note{display:none}#bce-prototype .settings-grid{grid-template-columns:1fr}#bce-prototype .library .rows{grid-template-columns:repeat(2,minmax(0,1fr))}#bce-prototype .bce-app{min-height:900px}#bce-prototype .brand{font-size:12px}#bce-prototype .chrome .tag{display:none}}
+@media(max-width:440px){#bce-prototype .library .rows{grid-template-columns:1fr}#bce-prototype .thumb{display:none}#bce-prototype .library .thumb{display:grid}#bce-prototype .row{gap:8px;padding:12px}#bce-prototype .row label{gap:8px}#bce-prototype .size{white-space:normal}#bce-prototype .heading{align-items:flex-start}#bce-prototype h2{font-size:21px}#bce-prototype .bce-app{min-height:1080px}#bce-prototype .chrome{gap:7px}#bce-prototype .chrome button{padding:7px}}
+</style>
+<script>
+(() => {
+ const root = document.getElementById('bce-prototype');
+ const videos = [
+  {title:'京都散步｜雨天的鴨川與老街',author:'旅途日記',duration:'18:42',size:286,quality:'1080P',art:'京都'},
+  {title:'從零開始理解 Rust 所有權',author:'寫點程式',duration:'32:16',size:412,quality:'1080P',art:'RUST'},
+  {title:'週末咖啡館・爵士現場',author:'生活片段',duration:'46:08',size:638,quality:'1080P',art:'JAZZ'},
+  {title:'城市夜景縮時攝影',author:'鏡頭之外',duration:'06:35',size:125,quality:'720P',art:'城市'},
+  {title:'尚未下載完成的影片',author:'生活片段',duration:'12:05',size:0,quality:'快取不完整',art:'未完成',invalid:true}
+ ];
+ const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
+ root.querySelectorAll('.bce-app').forEach(app => {
+  const layout=app.dataset.layout;
+  const s={theme:'dark',page:'main',connected:true,tools:true,device:'phone',selected:new Set([0,1]),phase:'idle',pct:0,dialog:false,logs:false,notice:'',scenario:'ready',output:'D:\\Videos\\BiliCache',timer:null,exported:0};
+  const busy=()=>['scan','export','download'].includes(s.phase);
+  const count=()=>s.selected.size;
+  const total=()=>[...s.selected].reduce((n,i)=>n+videos[i].size,0);
+  const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function device(){return `<div class="device"><span class="device-icon">${icon('smartphone')}</span><div><div class="title">${s.connected?'Pixel 7':'連接你的 Android 裝置'}</div><div class="${s.connected?'status':'meta'}">${s.connected?'已連線 · USB':'啟用 USB 偵錯後，按下連線'}</div></div><span class="spacer"></span><select aria-label="裝置" data-field="device" ${busy()?'disabled':''}><option value="phone" ${s.device==='phone'?'selected':''}>Pixel 7 · USB</option><option value="unauthorized" ${s.device==='unauthorized'?'selected':''}>未授權裝置 · USB</option><option value="none" ${s.device==='none'?'selected':''}>沒有裝置</option></select><button data-action="connect" ${busy()?'disabled':''}>${s.connected?'重新連線':'連線'}</button></div>`}
+  function output(){return `<div class="output"><label class="path"><small>輸出資料夾</small><input aria-label="輸出資料夾" data-field="output" value="${esc(s.output)}" ${busy()?'disabled':''}></label><button data-action="browse" ${busy()?'disabled':''}>${icon('folder-open')} 瀏覽</button><button class="primary" data-action="export" ${!s.connected||!count()||busy()?'disabled':''}>匯出所選${count()?`（${count()}）`:''}</button></div>`}
+  function rows(){return `<div class="toolbar"><label><input type="checkbox" data-field="all" ${count()===4?'checked':''} ${busy()?'disabled':''}>全選</label><span class="muted">5 部影片 · 已選 ${count()} 部${count()?` · ${total().toLocaleString()} MB`:''}</span><span class="spacer"></span><button class="quiet" data-action="scan" ${busy()?'disabled':''}>${icon('refresh-cw')} 重新掃描</button></div><div class="rows">${videos.map((v,i)=>`<div class="row ${s.selected.has(i)?'selected':''}">${layout==='library'?`<div class="thumb">${v.art}</div>`:''}<label><input aria-label="選取 ${v.title}" type="checkbox" data-index="${i}" ${s.selected.has(i)?'checked':''} ${v.invalid||busy()?'disabled':''}><span class="thumb">${v.art}</span><span><div class="title">${v.title}</div><div class="meta">${v.author} · ${v.duration} · <span class="${v.invalid?'warning':''}">${v.quality}</span></div></span></label><span class="size">${v.invalid?'無法匯出':`${v.size} MB`}</span></div>`).join('')}</div>`}
+  function empty(){return `<div class="rows empty">${icon(s.phase==='scan'?'scan-search':'cable')}<h3>${s.phase==='scan'?'正在讀取快取影片…':'準備好，把影片帶回電腦'}</h3><p class="muted">${s.phase==='scan'?'正在檢查影片資訊與可匯出狀態':'連接手機並按下「連線」，即會掃描影片。'}</p>${s.phase==='scan'?`<progress aria-label="掃描進度" max="100" value="${s.pct}"></progress>`:''}</div>`}
+  function progress(){if(s.phase==='export')return `<div class="progress-box" aria-live="polite"><div class="progress-caption"><span>正在匯出 · ${Math.min(count(),Math.floor(s.pct/100*count())+1)} / ${count()} 部</span><span>${s.pct}% <button class="quiet" data-action="cancel">取消</button></span></div><progress aria-label="匯出進度" max="100" value="${s.pct}"></progress><small>傳輸快取 → 合併影音 → 寫入封面</small></div>`;if(s.phase==='done')return `<div class="progress-box" aria-live="polite"><div class="status">${icon('circle-check')} 匯出完成 · ${s.exported} 部影片</div><div class="meta">已儲存至 ${esc(s.output)}</div><button class="quiet" data-action="open">開啟資料夾</button></div>`;return ''}
+  function settings(){return `<div class="heading"><div><h2>設定</h2><p class="muted">外觀、工具與匯出位置</p></div><button data-action="back">${icon('arrow-left')} 返回影片</button></div><div class="settings-grid"><div class="panel"><h3>外觀</h3><div class="setting"><span>淺色模式</span><label><input type="checkbox" data-field="theme" ${s.theme==='light'?'checked':''}> 開啟</label></div><div class="setting"><span>主色</span><span style="color:var(--blue)">● 藍色</span></div></div><div class="panel"><h3>連線方式</h3><p class="muted">手動連線後自動掃描。開始掃描與匯出前，確認裝置仍可使用。</p><small>待機時不輪巡裝置。</small></div><div class="panel full"><h3>必要工具</h3>${['ADB','FFmpeg','FFprobe'].map(t=>`<div class="tools-row"><div>${t}<div class="meta">tools / ${t.toLowerCase()}</div></div><span class="${s.tools?'status':'warning'}">${s.tools?'已就緒':'尚未設定'}</span></div>`).join('')}<div class="setting"><small>只在缺少時下載，不在啟動時自動更新。</small><button data-action="tools">${s.tools?'檢視工具':'下載並設定'}</button></div><label><small>自訂工具資料夾</small><input style="width:100%;margin-top:6px" data-field="toolpath" placeholder="使用預設 tools 資料夾"></label><button data-action="manual">選擇已有工具的資料夾</button></div><div class="panel full"><h3>日誌</h3><div class="setting"><span class="muted">記錄存放在程式旁的 log 資料夾</span><button data-action="logfolder">開啟日誌資料夾</button></div></div></div>`}
+  function render(){
+   app.dataset.theme=s.theme;
+   app.classList.toggle('library',layout==='library');
+   const main=s.connected?rows():empty();
+   app.innerHTML=`<header class="chrome"><span class="logo">B</span><span class="brand">BiliCacheExporter</span><span class="tag">互動原型 · 模擬資料</span><span class="spacer"></span><button class="quiet icon" data-action="theme" aria-label="${s.theme==='dark'?'切換淺色模式':'切換深色模式'}">${icon(s.theme==='dark'?'sun':'moon')}</button><button class="quiet icon" data-action="settings">${icon('settings-2')} 設定</button></header><main class="content">${s.notice?`<div class="notice" role="status">${esc(s.notice)}</div>`:''}${s.page==='settings'?settings():`<div class="heading"><div><h2>你的離線收藏</h2><p class="muted">從手機快取，匯出完整影片與封面。</p></div></div>${layout==='split'?`<div class="workspace"><aside class="sidebar">${device()}${output()}<p class="sidebar-note">原始快取不會被刪除。<br>匯出影片保留內嵌封面。</p></aside><section>${main}${progress()}</section></div><div class="mobile-output">${output()}</div>`:`${device()}${main}${output()}${progress()}`}<div class="footer"><span>${s.connected?'裝置已連線':'尚未連線'} · ${s.phase==='export'?'匯出中':s.phase==='scan'?'掃描中':'待命'}</span><span class="spacer"></span><button class="quiet" data-action="logs">${s.logs?'收合':'查看'}詳細記錄</button></div>${s.logs?`<div class="logs">[原型] ${s.tools?'必要工具已就緒':'尚未設定必要工具'}\n[原型] ${s.connected?'已連線 Pixel 7；找到 5 部影片，其中 1 部快取不完整':'等待手動連線'}\n[原型] 狀態：${s.phase}；選取 ${count()} 部；進度 ${s.pct}%</div>`:''}`}${s.dialog?dialog():''}</main><div class="scenario"><label>原型情境 <select data-field="scenario" ${busy()?'disabled':''}><option value="ready" ${s.scenario==='ready'?'selected':''}>已連線，可匯出</option><option value="first" ${s.scenario==='first'?'selected':''}>首次使用，缺少工具</option><option value="offline" ${s.scenario==='offline'?'selected':''}>尚未連線</option><option value="unauthorized" ${s.scenario==='unauthorized'?'selected':''}>手機未授權</option><option value="download-fail" ${s.scenario==='download-fail'?'selected':''}>下載失敗</option><option value="disconnect" ${s.scenario==='disconnect'?'selected':''}>作業前手機已拔除</option></select></label><span>狀態：${s.phase} · 所有操作均為模擬</span></div>`;
+   if(globalThis.lucide)lucide.createIcons();
+  }
+  function dialog(){return `<div class="scrim"><section class="dialog" role="dialog" aria-modal="true" aria-label="必要工具設定"><span style="color:var(--blue)">${icon('download')}</span><h3>${s.tools?'必要工具已就緒':s.phase==='download'?'正在準備必要工具':'先準備好匯出工具'}</h3><p class="muted">${s.tools?'ADB、FFmpeg 與 FFprobe 已可使用。':'需要 ADB、FFmpeg 與 FFprobe。工具將放在程式旁的 tools 資料夾。'}</p><div class="tools-row"><span>工具組合</span><span class="muted">約 100 MB · 示意</span></div>${s.phase==='download'?`<progress aria-label="工具下載進度" value="${s.pct}" max="100"></progress><small>下載並驗證檔案完整性 · ${s.pct}%</small>`:`<small>${s.phase==='download-error'?'下載未完成。請檢查網路後重試，也可以指定已有工具。':'實際版本、來源與大小會在正式版列出。'}</small>`}<div class="dialog-actions"><button data-action="close-dialog">${s.phase==='download'?'取消下載':'稍後'}</button>${!s.tools&&s.phase!=='download'?`<button class="primary" data-action="download">${s.phase==='download-error'?'重試下載':'下載並設定'}</button>`:''}${s.tools?'<button class="primary" data-action="close-dialog">完成</button>':''}</div></section></div>`}
+  function stop(){if(s.timer)clearInterval(s.timer);s.timer=null}
+  function animate(phase,done){stop();s.phase=phase;s.pct=0;render();s.timer=setInterval(()=>{s.pct=Math.min(100,s.pct+10);if(s.pct===100){stop();done()}render()},phase==='export'?450:180)}
+  function connect(){s.notice='';if(!s.tools){s.dialog=true;render();return}if(s.device!=='phone'){s.connected=false;s.notice=s.device==='none'?'找不到裝置。請確認 USB 連接與 USB 偵錯。':'手機尚未授權。請解鎖手機，允許 USB 偵錯後再按連線。';render();return}s.connected=false;animate('scan',()=>{s.connected=true;s.phase='idle';s.notice='掃描完成，找到 5 部影片。1 部快取不完整，無法匯出。'})}
+  app.addEventListener('click',event=>{
+   const b=event.target.closest('button[data-action]');if(!b||b.disabled)return;
+   switch(b.dataset.action){
+    case 'theme':s.theme=s.theme==='dark'?'light':'dark';break;
+    case 'settings':s.page='settings';s.notice='';break;
+    case 'back':s.page='main';s.notice='';break;
+    case 'connect':case 'scan':connect();return;
+    case 'export':if(s.scenario==='disconnect'){s.connected=false;s.phase='idle';s.notice='裝置已離線，尚未開始匯出。請重新連線後再試。';break}s.notice='';animate('export',()=>{s.phase='done';s.exported=count()});return;
+    case 'cancel':stop();s.phase='idle';s.notice='已取消匯出，原始快取保持不變。';break;
+    case 'tools':s.dialog=true;break;
+    case 'close-dialog':stop();if(s.phase==='download')s.phase='idle';s.dialog=false;break;
+    case 'download':animate('download',()=>{if(s.scenario==='download-fail'){s.phase='download-error'}else{s.tools=true;s.phase='idle'}});return;
+    case 'logs':s.logs=!s.logs;break;
+    case 'browse':s.output=s.output==='D:\\Videos\\BiliCache'?'D:\\Exports\\BiliCache':'D:\\Videos\\BiliCache';s.notice='原型：已模擬選擇另一個輸出資料夾。';break;
+    case 'manual':s.tools=true;s.notice='原型：已模擬選取並驗證現有工具。';break;
+    case 'open':case 'logfolder':s.notice='原型：正式版會在檔案總管開啟資料夾。';break;
+   }render();
+  });
+  app.addEventListener('change',e=>{
+   const el=e.target;
+   if(el.hasAttribute('data-index')){const i=Number(el.dataset.index);if(el.checked)s.selected.add(i);else s.selected.delete(i)}
+   switch(el.dataset.field){
+    case 'theme':s.theme=el.checked?'light':'dark';break;
+    case 'all':s.selected=el.checked?new Set([0,1,2,3]):new Set();break;
+    case 'device':s.device=el.value;s.connected=false;s.phase='idle';s.notice='已變更裝置，請按連線。';break;
+    case 'output':s.output=el.value;return;
+    case 'toolpath':s.notice='原型：請使用「選擇已有工具的資料夾」模擬驗證工具。';break;
+    case 'scenario':stop();s.scenario=el.value;s.notice='';s.phase='idle';s.dialog=false;s.pct=0;s.page='main';s.selected=new Set([0,1]);s.device=s.scenario==='unauthorized'?'unauthorized':'phone';s.tools=!['first','download-fail'].includes(s.scenario);s.connected=['ready','disconnect'].includes(s.scenario);break;
+   }render();
+  });
+  render();
+ });
+})();
+</script>
