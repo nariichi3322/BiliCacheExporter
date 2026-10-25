@@ -181,6 +181,10 @@ check(rowsText.some(t => t.includes('下載尚未完成')) && rowsText.some(t =>
 check(await app.eval("document.documentElement.scrollWidth <= window.innerWidth"), 'Long title does not cause horizontal overflow')
 await app.shot('03-list-dark')
 
+// Keyboard quality choice on the multi-quality row (native select, arrow key).
+await app.eval(`document.querySelector('select[aria-label^="畫質"]').focus()`)
+await app.key('ArrowDown', 'ArrowDown', 40)
+check(await app.eval(`document.querySelector('select[aria-label^="畫質"]').value !== ''`), 'Quality can be chosen with the keyboard')
 // Quality choice + select all + export.
 await app.eval(`(() => { const s = document.querySelector('select[aria-label^="畫質"]'); const o = [...s.options].find(o => o.text.startsWith('116')); s.value = o.value; s.dispatchEvent(new Event('change')); })()`)
 await app.eval("document.querySelector('.toolbar input[type=checkbox]').click()")
@@ -245,10 +249,39 @@ await app.send('Emulation.clearDeviceMetricsOverride')
 const dpr = await app.eval('window.devicePixelRatio')
 await app.close()
 
+// Simulate a crash leftover: ownership record + marker with no live lock.
+{
+  const id = '0123456789abcdef0123456789abcdef'
+  const tempRoot = path.join(dir, 'out', '.bili-temp')
+  fs.mkdirSync(path.join(tempRoot, 'bili-export-' + id), { recursive: true })
+  fs.writeFileSync(path.join(tempRoot, 'bili-export-' + id, '.bili-owned'), id)
+  fs.writeFileSync(path.join(tempRoot, 'bili-export-' + id, 'video.m4s'), 'leftover')
+  fs.mkdirSync(path.join(dir, '.bili-jobs'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.bili-jobs', id + '.json'), JSON.stringify({ Id: id, TempRoot: tempRoot, OutputRoot: path.join(dir, 'out') }))
+}
 // Restart: theme persisted, still no query at startup.
 const before = calls(dir).length
 app = await launch(dir)
 await sleep(2000)
+check(await app.waitFor("document.body.innerText.includes('找到 1 個先前未完成作業')"), 'Startup offers cleanup of crash leftovers')
+await app.shot('12a-recover-prompt-light')
+await app.click('清理')
+check(await app.waitFor("document.body.innerText.includes('已清理 1 個殘留暫存')") && !fs.existsSync(path.join(dir, 'out', '.bili-temp', 'bili-export-0123456789abcdef0123456789abcdef')) && outputs(dir).length >= 4, 'Cleanup removes only the owned leftover and keeps outputs')
+// Keyboard: open settings and return.
+const tabTo = async label => {
+  await app.eval('document.activeElement?.blur()')
+  for (let i = 0; i < 20; i++) {
+    await app.key('Tab', 'Tab', 9)
+    if (await app.eval(`document.activeElement?.textContent?.trim() === ${JSON.stringify(label)}`)) return true
+  }
+  return false
+}
+check(await tabTo('設定'), 'Keyboard reaches 設定')
+await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
+check(await app.waitFor("document.body.innerText.includes('必要工具與位置')"), 'Settings opens by keyboard')
+check(await tabTo('返回影片'), 'Keyboard reaches 返回影片')
+await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
+check(await app.waitFor("document.querySelector('.device') !== null && !document.body.innerText.includes('必要工具與位置')"), 'Returns to the list by keyboard')
 check(await app.eval("document.documentElement.dataset.theme") === 'light', 'Theme persists across restart')
 check(calls(dir).length === before, 'Restart makes no ADB calls')
 const saved = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
@@ -265,6 +298,45 @@ check(await app.waitFor("document.body.innerText.includes('尚未開始匯出')"
 check(calls(dir).filter(c => c[2] === 'pull').length === pullsBefore, 'No transfer after unplug')
 await app.shot('12-unplugged-light')
 await app.close()
+
+// Moved folder: relative tool paths still resolve from the new location.
+{
+  const moved = path.join(work, 'portable-moved')
+  fs.rmSync(moved, { recursive: true, force: true })
+  fs.cpSync(dir, moved, { recursive: true })
+  fs.writeFileSync(path.join(moved, 'tools/adb/fake-phone/devices.txt'), 'List of devices attached
+FAKE-SERIAL-0001	device product:x model:SM_S9260 device:y
+')
+  fs.rmSync(dir, { recursive: true, force: true })
+  const m = await launch(moved)
+  await m.click('設定')
+  check(await m.waitFor("document.body.innerText.includes('Android Debug Bridge')", 15000), 'Moved folder: bundled-tool path still validates')
+  await m.click('返回影片')
+  await m.click('連線')
+  check(await m.waitFor("document.querySelectorAll('li.row').length === 4"), 'Moved folder: connect and scan work')
+  await m.close()
+}
+
+// Manual tool path entered in the settings UI (outside the program folder, no PATH).
+{
+  const manualDir = makeFolder('manual', { tools: false })
+  const own = path.join(work, 'my-tools')
+  fs.rmSync(own, { recursive: true, force: true })
+  fs.mkdirSync(path.join(own, 'fake-phone'), { recursive: true })
+  fs.copyFileSync(fakeAdb, path.join(own, 'adb.exe'))
+  fs.cpSync(path.join(work, 'portable-moved', 'tools/adb/fake-phone'), path.join(own, 'fake-phone'), { recursive: true })
+  const m = await launch(manualDir)
+  await m.click('設定')
+  await m.waitFor("document.body.innerText.includes('必要工具與位置')")
+  await m.eval(`(() => { const i = document.querySelector('input[aria-label^="ADB"]'); i.value = ${JSON.stringify(path.join(own, 'adb.exe'))}; i.dispatchEvent(new Event('input')); })()`)
+  await m.click('儲存設定')
+  check(await m.waitFor("document.body.innerText.includes('設定已儲存') && document.body.innerText.includes('Android Debug Bridge')", 15000), 'Manual ADB path saved from settings and validated by running it')
+  check(JSON.parse(fs.readFileSync(path.join(manualDir, 'settings.json'), 'utf8')).Adb === path.join(own, 'adb.exe'), 'Manual path outside the folder stored as entered')
+  await m.click('返回影片')
+  await m.click('連線')
+  check(await m.waitFor("document.querySelectorAll('li.row').length === 4"), 'Manual tool works for connect and scan')
+  await m.close()
+}
 
 // Unwritable location guidance: the program folder is read-only for logs.
 {

@@ -85,9 +85,13 @@ try {
     Start-Sleep -Seconds 3; $p.Refresh()
     $wvTitle = $p.MainWindowTitle
     $wvChildren = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)").Count
-    $p.Kill(); $p.WaitForExit()
+    # Answer 「否」: the app must exit (code 2) without writing anything.
+    $shell = New-Object -ComObject WScript.Shell
+    if ($shell.AppActivate($p.Id)) { Start-Sleep -Milliseconds 300; $shell.SendKeys('n') }
+    if (!$p.WaitForExit(10000)) { $p.Kill(); $p.WaitForExit(); throw 'WebView2 guidance did not close on 否.' }
+    $wvExit = $p.ExitCode
     $wvWrote = @(Get-ChildItem -LiteralPath $wvDir -Name | Where-Object { $_ -notin @('BiliCacheExporter.exe', 'empty-runtime') })
-    if ($wvTitle -ne '需要安裝 WebView2' -or $wvChildren -ne 0 -or $wvWrote.Count -ne 0) { throw "WebView2 guidance check failed: '$wvTitle' children=$wvChildren wrote=$wvWrote" }
+    if ($wvTitle -ne '需要安裝 WebView2' -or $wvChildren -ne 0 -or $wvWrote.Count -ne 0 -or $wvExit -ne 2) { throw "WebView2 guidance check failed: '$wvTitle' children=$wvChildren wrote=$wvWrote exit=$wvExit" }
     Remove-Item -LiteralPath $wvDir -Recurse -Force
 
     # Integrated flows on the packaged EXE: fake phone + real FFmpeg/FFprobe.
@@ -117,7 +121,7 @@ try {
         "- 啟動到視窗可操作（UI 掛載並顯示，不含連線／掃描），三次新資料夾：$(($startup | ForEach-Object { [Math]::Round($_) }) -join '、') ms；中位數 $([Math]::Round($median)) ms。",
         "- 閒置 8 秒、未連線：應用程序 Working Set $(& $mib $appWs) MiB；含 WebView2 子程序共 $($procs.Count) 個程序，Working Set 合計 $(& $mib $treeWs) MiB、Private 合計 $(& $mib $treePrivate) MiB。WebView2 子程序共享系統元件，合計值會重複計算共享頁面。",
         '- 與舊版比較：舊 WinForms 量測為「正常視窗閒置 Working Set 約 62 MiB、開窗中位數約 0.34 秒」，只量單一 .NET 程序；新版另含 WebView2 多程序，量測範圍不同，不宣稱更快或更省記憶體。',
-        "- WebView2 缺少（以空的 WEBVIEW2_BROWSER_EXECUTABLE_FOLDER 模擬）：顯示原生「需要安裝 WebView2」對話框，未啟動 WebView 子程序、未寫入任何檔案。不是乾淨虛擬機上的實測。",
+        "- WebView2 缺少（以空的 WEBVIEW2_BROWSER_EXECUTABLE_FOLDER 模擬）：顯示原生「需要安裝 WebView2」對話框，未啟動 WebView 子程序；按「否」以代碼 2 結束且未寫入任何檔案（「是」只開啟 Microsoft 官方頁，未自動化點擊）。不是乾淨虛擬機上的實測。",
         "- 正式包整合流程：$(@($e2eResults.results | Where-Object ok).Count)/$(@($e2eResults.results).Count) PASS（假手機＋真實 FFmpeg/FFprobe，DPR $($e2eResults.devicePixelRatio)）。截圖在 evidence/。",
         $(if ($WithDownload) { '- 本次包含正式包內的真實 ADB 下載、SHA-256 核對與啟用。' } else { '- 本次未在正式包內執行真實下載（加 -WithDownload 才會）。' }),
         '- 未驗證：真手機、實際播放、封面外觀與檔案總管縮圖（工作票 09，由使用者確認）。'

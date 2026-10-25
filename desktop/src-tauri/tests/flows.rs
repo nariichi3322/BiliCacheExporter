@@ -580,6 +580,50 @@ fn partial_retry_adds_numbered_file_without_overwriting() {
 }
 
 #[test]
+fn cancel_during_cover_stage_leaves_no_output() {
+    let mut phone = Phone::one_device();
+    let remote = phone.add("1/c_1", "封面時取消", &["80"], true);
+    let h = harness(phone);
+    let r = h.app.connect(None).unwrap();
+    h.phone.lock().unwrap().cancel_pull = Some(format!("{remote}/cover.jpg"));
+    let s = h.app.export(r.generation, vec![sel(0)]).unwrap();
+    assert_eq!(s.cancelled, 1);
+    assert!(exported(&h).is_empty() && mp4s(&h.dir.join("output")).iter().all(|n| !n.contains("partial")), "{:?}", mp4s(&h.dir.join("output")));
+    assert!(std::fs::read_dir(h.dir.join("output").join(".bili-temp")).unwrap().next().is_none());
+}
+
+/// Temp on another volume, e.g. BILI_TEST_OTHER_VOLUME=D:\ (skipped when not set).
+#[test]
+fn temp_on_another_volume() {
+    let Ok(volume) = std::env::var("BILI_TEST_OTHER_VOLUME") else { return };
+    let mut phone = Phone::one_device();
+    let remote = phone.add("1/c_1", "跨磁碟", &["80"], true);
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(phone));
+    let log = Logger::memory();
+    let runner = runner(&shared, log.clone());
+    let adb = Adb { runner: &runner, exe: "fake-adb.exe".into() };
+    let items = adb.scan(SERIAL, &Cancel::default(), &mut |_| {}).unwrap();
+    let temp = Path::new(&volume).join(format!("bili-test-temp-{}", uuid::Uuid::new_v4().simple()));
+    let out = tempdir();
+    let (out_text, temp_text) = (out.to_string_lossy().into_owned(), temp.to_string_lossy().into_owned());
+    assert_ne!(bili_core::storage::disk_space(&out).unwrap().0, bili_core::storage::disk_space(Path::new(&volume)).unwrap().0);
+    let storage = Storage::new(&tempdir(), log).unwrap();
+    let request = Request {
+        serial: SERIAL,
+        item: &items[0],
+        variant: &items[0].variants[0],
+        ffmpeg: &ffmpeg(),
+        ffprobe: &ffprobe(),
+        output: &out_text,
+        temp: &temp_text,
+    };
+    let result = export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {}).unwrap();
+    assert!(result.cover_error.is_none() && Path::new(&result.path).exists() && remote.ends_with("c_1"));
+    assert!(std::fs::read_dir(&temp).unwrap().next().is_none(), "temp on other volume cleaned");
+    std::fs::remove_dir(&temp).unwrap();
+}
+
+#[test]
 fn crash_leftovers_are_recovered_only_with_ownership_proof() {
     let h = harness(Phone::one_device());
     let out = h.dir.join("output");
