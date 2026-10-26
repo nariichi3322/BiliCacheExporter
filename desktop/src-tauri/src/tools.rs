@@ -115,7 +115,7 @@ pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: 
         .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
         .build()
         .into();
-    let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試，或改為手動指定工具。")))?;
+    let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試。")))?;
     let mut reader = response.into_body().into_reader();
     let mut file = std::fs::File::create(dest).map_err(|e| Error::Failed(format!("無法寫入下載暫存：{e}")))?;
     let mut buffer = vec![0u8; 256 * 1024];

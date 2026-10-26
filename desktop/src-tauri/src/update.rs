@@ -78,12 +78,15 @@ pub fn old_path(exe: &Path) -> PathBuf {
     exe.with_file_name(name)
 }
 
-/// Removes executables left behind by a previous update; returns false while one is still in use.
+/// Removes executables and staging folders left behind by a previous update; returns false while one is still in use.
 fn remove_old(dir: &Path) -> bool {
     let mut done = true;
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        if entry.file_name().to_string_lossy().to_lowercase().ends_with(".exe.old") {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.ends_with(".exe.old") {
             done &= std::fs::remove_file(entry.path()).is_ok();
+        } else if name.starts_with(".update-") {
+            done &= std::fs::remove_dir_all(entry.path()).is_ok();
         }
     }
     done
@@ -134,14 +137,7 @@ fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, canc
     fetch(&format!("{base}/{ASSET}"), &archive, size, cancel, &mut |bytes| report("下載", bytes))?;
     cancel.check()?;
     report("檢查完整性", size);
-    let expected = std::fs::read_to_string(&sums)?
-        .lines()
-        .find_map(|line| {
-            let mut parts = line.split_whitespace();
-            let hash = parts.next()?;
-            (parts.next()? == ASSET).then(|| hash.to_lowercase())
-        })
-        .ok_or_else(|| Error::Failed(format!("{SUMS} 沒有 {ASSET} 的雜湊值。")))?;
+    let expected = hash_for(&std::fs::read_to_string(&sums)?).ok_or_else(|| Error::Failed(format!("{SUMS} 沒有 {ASSET} 的雜湊值。")))?;
     let bytes = std::fs::read(&archive)?;
     if format!("{:x}", Sha256::digest(&bytes)) != expected {
         return fail("下載檔案的 SHA-256 與發行記錄不符，已拒絕安裝。請重試或改為手動下載。");
@@ -160,6 +156,15 @@ fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, canc
     cancel.check()?;
     report("替換", size);
     swap(exe, &fresh)
+}
+
+/// The package's hash from SHA256.txt; Windows PowerShell 5 writes UTF-8 with a BOM.
+fn hash_for(sums: &str) -> Option<String> {
+    sums.trim_start_matches('\u{feff}').lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let hash = parts.next()?;
+        (parts.next()? == ASSET).then(|| hash.to_lowercase())
+    })
 }
 
 /// A running executable can be renamed but not overwritten, so it moves aside first; any failure puts it back.
@@ -187,6 +192,14 @@ mod tests {
         assert!(parse("v2.10.0") > parse("2.9.9+x"));
         assert_eq!(parse("v2.1"), None);
         assert_eq!(parse("v2.1.0-beta"), None);
+    }
+
+    #[test]
+    fn sums_are_read_with_or_without_a_bom() {
+        let line = "04E72BCA  BiliCacheExporter-win-x64.zip\r\n";
+        assert_eq!(hash_for(line).as_deref(), Some("04e72bca"));
+        assert_eq!(hash_for(&format!("\u{feff}{line}")).as_deref(), Some("04e72bca"));
+        assert_eq!(hash_for("04E72BCA  other.zip\n"), None);
     }
 
     #[test]

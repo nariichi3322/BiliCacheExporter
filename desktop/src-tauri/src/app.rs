@@ -491,6 +491,8 @@ impl App {
         for name in &names {
             let package = PACKAGES.iter().find(|p| p.name == name).ok_or_else(|| err(format!("未知的工具：{name}")))?;
             let folder = tools::install(&self.dir, &self.runner, package, &*self.fetch, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
+            // A download takes minutes; settings saved meanwhile (a skipped version) must not be overwritten.
+            s = self.settings()?;
             let rel = |exe: &str| settings::portable(&self.dir, &folder.join(exe).to_string_lossy());
             if package.name == "adb" {
                 s.adb = rel("adb.exe");

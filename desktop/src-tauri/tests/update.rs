@@ -165,8 +165,11 @@ fn update_replaces_only_the_executable() {
     assert!(stages.contains(&"下載".to_string()) && stages.last().unwrap() == "替換", "{stages:?}");
     assert!(!h.app.is_busy());
     drop(h);
+    std::fs::create_dir_all(dir.join(".update-crashed")).unwrap();
+    std::fs::write(dir.join(".update-crashed").join("BiliCacheExporter-win-x64.zip"), b"partial").unwrap();
     harness_in(dir.clone(), Phone::one_device(), no_network());
     assert!(!dir.join("BiliCacheExporter.exe.old").exists(), "the next start removes the old executable");
+    assert!(!dir.join(".update-crashed").exists(), "and staging left by a crash");
 }
 
 #[test]
