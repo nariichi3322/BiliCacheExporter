@@ -38,6 +38,7 @@ const s = reactive({
 })
 const draft = reactive({ adb: '', ffmpeg: '', ffprobe: '', output: '', temp: '' })
 const busy = computed(() => s.phase !== 'idle')
+const scanning = computed(() => s.phase === 'connect' || s.phase === 'scan')
 const blocked = computed(() => !!s.storageError || !!s.settingsError)
 const theme = computed(() => s.settings?.Theme ?? 'dark')
 watch(theme, t => { document.documentElement.dataset.theme = t }, { immediate: true })
@@ -176,7 +177,7 @@ function onEvent(e: AppEvent) {
       s.stage = e.text
       break
     case 'item':
-      if (s.phase === 'connect' || s.phase === 'scan') s.items.push(e.item)
+      if (scanning.value) s.items.push(e.item)
       break
     case 'progress':
       s.progress = e.progress
@@ -429,7 +430,7 @@ onMounted(async () => {
               <div class="info">
                 <div class="title">{{ item.title }}</div>
                 <div class="meta">
-                  <select v-if="item.variants.length > 1 && !item.issue" :aria-label="'畫質：' + item.title" :value="s.choices[item.id] ?? ''" :disabled="busy" @change="choose(item, ($event.target as HTMLSelectElement).value)">
+                  <select v-if="item.variants.length > 1 && !item.issue" :aria-label="'畫質：' + item.title" :value="s.choices[item.id] ?? item.autoVariant ?? ''" :disabled="busy" @change="choose(item, ($event.target as HTMLSelectElement).value)">
                     <option value="" disabled>選擇畫質（{{ item.variants.length }} 個版本）</option>
                     <option v-for="(v, i) in item.variants" :key="i" :value="i" :disabled="!!v.issue">{{ v.quality }} · {{ mb(v.videoSize + v.audioSize) }}{{ v.issue ? ' · 不可用：' + v.issue : '' }}</option>
                   </select>
@@ -452,10 +453,12 @@ onMounted(async () => {
           </ul>
         </template>
         <div v-else class="rows empty" aria-live="polite">
-          <h3>{{ s.phase === 'connect' || s.phase === 'scan' ? (s.stage || '正在處理…') : s.serial ? '這部手機沒有國際版快取影片' : '準備好，把影片帶回電腦' }}</h3>
-          <p class="muted">{{ s.phase === 'connect' || s.phase === 'scan' ? '正在檢查影片資訊與可匯出狀態' : s.serial ? '可在手機下載影片後按「重新掃描」。' : '連接手機並按下「連線」，成功後會自動掃描影片。' }}</p>
+          <h3>{{ scanning ? (s.stage || '正在處理…') : s.serial ? '這部手機沒有國際版快取影片' : '準備好，把影片帶回電腦' }}</h3>
+          <p class="muted">{{ scanning ? '正在檢查影片資訊與可匯出狀態' : s.serial ? '可在手機下載影片後按「重新掃描」。' : '連接手機並按下「連線」，成功後會自動掃描影片。' }}</p>
+          <button v-if="scanning" @click="api.cancel()">取消</button>
+          <button v-else-if="s.serial" :disabled="busy || blocked" @click="rescan">重新掃描</button>
         </div>
-        <p v-if="s.items.length && (s.phase === 'connect' || s.phase === 'scan')" class="muted small" aria-live="polite">{{ s.stage }} 已找到 {{ s.items.length }} 個項目…</p>
+        <p v-if="s.items.length && scanning" class="muted small" aria-live="polite">{{ s.stage }} 已找到 {{ s.items.length }} 個項目… <button class="quiet" @click="api.cancel()">取消</button></p>
 
         <div class="output">
           <label class="path">

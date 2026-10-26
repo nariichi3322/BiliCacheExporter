@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 
-Resolution: resolved
+Resolution: open
 
 日期：2026-10-26（Asia/Taipei）
 
@@ -142,3 +142,4 @@ Windows 發行以一個應用程式 EXE 為入口，不在程式旁散落框架 
 
 - 2026-10-26：依使用者呼叫 to-spec，綜合已確認討論發布本機規格。保持舊版本與其驗收證據不變；此次未開始產品移植。
 - 2026-10-26：工作票 01–09 全部 resolved。新版 Tauri／Vue 3／TypeScript／Rust 可攜包（版本 2.0.0+22e76fd）已完成假手機與真實影音工具的自動化驗證，並在使用者的 Samsung SM-S9260 上實機驗收；播放、封面與檔案總管縮圖由使用者確認。驗收範圍限於本機與當時的手機快取；未出現的格式與其他電腦、乾淨系統、其他 DPI 未實測。
+- 2026-10-26：code review 後改回 open：工作票 08 的實體離線與乾淨環境 WebView2 兩項驗收仍待實測；其餘工作票維持 resolved。

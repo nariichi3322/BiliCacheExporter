@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bili_core::app::{App, CmdError, ConnectResult, Event, Out, Selection, SettingsInput, Snapshot, ToolStatus};
+use bili_core::app::{err, App, ConnectResult, Event, Out, Selection, SettingsInput, Snapshot, ToolStatus};
 use bili_core::batch::Summary;
 use bili_core::log::Logger;
 use bili_core::runner::Runner;
@@ -17,7 +17,7 @@ struct Shared {
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Out<T> + Send + 'static) -> Out<T> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| CmdError { message: e.to_string(), cancelled: false, missing: vec![] })?
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| err(e.to_string()))?
 }
 
 #[tauri::command]
@@ -96,34 +96,35 @@ fn open_folder(s: State<Shared>, kind: String) -> Out<()> {
     let path = match kind.as_str() {
         "log" => s.app.dir.join("log"),
         "output" => PathBuf::from(snap.settings.output.trim()),
-        _ => return Err(CmdError { message: "不支援的資料夾".into(), cancelled: false, missing: vec![] }),
+        _ => return Err(err("不支援的資料夾")),
     };
     if !path.is_absolute() || !path.is_dir() {
-        return Err(CmdError { message: format!("資料夾不存在：{}", path.display()), cancelled: false, missing: vec![] });
+        return Err(err(format!("資料夾不存在：{}", path.display())));
     }
-    std::process::Command::new("explorer.exe").arg(&path).spawn().map(|_| ()).map_err(|e| CmdError {
-        message: e.to_string(),
-        cancelled: false,
-        missing: vec![],
-    })
+    std::process::Command::new("explorer.exe").arg(&path).spawn().map(|_| ()).map_err(|e| err(e.to_string()))
 }
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// Native guidance shown before any web UI exists, since the page itself needs WebView2.
-fn webview2_missing(detail: &str) {
+const WEBVIEW2_URL: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+/// Native guidance shown before (or instead of) the web UI, since the page itself needs WebView2.
+fn webview2_guidance(title: &str, problem: &str, detail: &str) {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONWARNING, MB_YESNO};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO};
     let text = format!(
-        "此程式需要 Microsoft Edge WebView2 Runtime 才能顯示介面，但這台電腦目前找不到可用的版本。\n\n({detail})\n\n按「是」開啟 Microsoft 官方下載頁，安裝「Evergreen Bootstrapper」後再重新開啟本程式。\n按「否」結束程式，不會變更任何檔案。"
+        "{problem}\n\n({detail})\n\n按「是」開啟 Microsoft 官方下載頁，安裝「Evergreen Bootstrapper」後再重新開啟本程式。\n按「否」結束程式，不會變更任何檔案。"
     );
-    let answer = unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide("需要安裝 WebView2").as_ptr(), MB_YESNO | MB_ICONWARNING) };
+    let answer = unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide(title).as_ptr(), MB_YESNO | MB_ICONWARNING) };
     if answer == IDYES {
-        let url = wide("https://developer.microsoft.com/microsoft-edge/webview2/");
-        let open = wide("open");
-        unsafe { ShellExecuteW(std::ptr::null_mut(), open.as_ptr(), url.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
+        let opened = unsafe { ShellExecuteW(std::ptr::null_mut(), wide("open").as_ptr(), wide(WEBVIEW2_URL).as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
+        // ShellExecuteW reports success with a value above 32.
+        if opened as usize <= 32 {
+            let text = format!("無法自動開啟瀏覽器。請手動前往下列網址下載 WebView2 Runtime：\n\n{WEBVIEW2_URL}");
+            unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide(title).as_ptr(), MB_OK | MB_ICONERROR) };
+        }
     }
 }
 
@@ -135,7 +136,7 @@ fn main() {
         return;
     }
     if let Err(e) = tauri::webview_version() {
-        webview2_missing(&e.to_string());
+        webview2_guidance("需要安裝 WebView2", "此程式需要 Microsoft Edge WebView2 Runtime 才能顯示介面，但這台電腦目前找不到可用的版本。", &e.to_string());
         std::process::exit(2);
     }
     let measure = args.iter().position(|a| a == "--measure-startup").and_then(|i| args.get(i + 1)).map(PathBuf::from);
@@ -144,7 +145,7 @@ fn main() {
         Ok(log) => (log, None),
         Err(e) => (Logger::memory(), Some(format!("程式資料夾無法寫入（{}）：{e}", dir.display()))),
     };
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |tauri_app| {
             let handle = tauri_app.handle().clone();
@@ -172,6 +173,10 @@ fn main() {
             download_tools,
             open_folder
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+    // A runtime that exists but cannot start (damaged install, policy) gets the same guidance instead of a silent crash.
+    if let Err(e) = result {
+        webview2_guidance("介面無法啟動", "介面無法啟動，WebView2 Runtime 可能損壞或被系統原則封鎖。請重新安裝 WebView2 Runtime 後再試。", &e.to_string());
+        std::process::exit(1);
+    }
 }

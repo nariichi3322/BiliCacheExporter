@@ -37,7 +37,7 @@ impl From<Error> for CmdError {
     }
 }
 
-fn err(message: impl Into<String>) -> CmdError {
+pub fn err(message: impl Into<String>) -> CmdError {
     CmdError { message: message.into(), cancelled: false, missing: Vec::new() }
 }
 

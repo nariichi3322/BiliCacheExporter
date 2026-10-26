@@ -64,7 +64,7 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
     let pull = |remote: &str, local: &Path, size: u64, progress: &mut dyn FnMut(Option<f64>, &str)| -> Res<()> {
         let stage = format!("傳輸 {}", local.file_name().unwrap().to_string_lossy());
         progress(None, &stage);
-        // shortcut: ADB text progress differs by version; without a percentage the stage alone is shown.
+        // shortcut: ADB text progress differs by version, so without a percentage only the stage is shown; switch to a byte-counting transfer if users need exact progress.
         adb.pull(req.serial, remote, &s(local), cancel, &mut |line| {
             if let Some(m) = percent.captures(line) {
                 progress(Some((m[1].parse::<f64>().unwrap_or(0.0) / 100.0).clamp(0.0, 1.0)), &stage);

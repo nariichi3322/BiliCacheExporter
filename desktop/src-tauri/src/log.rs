@@ -85,6 +85,7 @@ struct Patterns {
     url: Regex,
     serial_arg: Regex,
     device_line: Regex,
+    device_quoted: Regex,
     profile: Option<Regex>,
 }
 
@@ -98,7 +99,13 @@ fn patterns() -> &'static Patterns {
         Patterns {
             url: Regex::new(r#"(?i)(https?:[^\s"<>?]+)\?[^\s"<>]*"#).unwrap(),
             serial_arg: Regex::new(r#"("-s"\s+)"[^"]*""#).unwrap(),
-            device_line: Regex::new(r"(?m)^\S+(\s+(?:device|offline|unauthorized)\b)").unwrap(),
+            // Every state `adb devices` can print; a quoted serial after the state is an error message, handled below.
+            device_line: Regex::new(
+                r#"(?m)^\S+(\s+(?:device|offline|unauthorized|authorizing|connecting|recovery|rescue|sideload|bootloader|host|unknown|no permissions))(\s*$|\s+[^'"\s])"#,
+            )
+            .unwrap(),
+            // ADB errors quote the serial: `adb: device 'R58N…' not found`.
+            device_quoted: Regex::new(r#"(?i)(device\s+)(?:'[^']*'|"[^"]*")"#).unwrap(),
             profile,
         }
     })
@@ -113,7 +120,8 @@ pub fn redact(text: &str) -> String {
     let p = patterns();
     let text = p.url.replace_all(text, "$1?[redacted]");
     let text = p.serial_arg.replace_all(&text, "$1\"[device]\"");
-    let text = p.device_line.replace_all(&text, "[device]$1");
+    let text = p.device_line.replace_all(&text, "[device]$1$2");
+    let text = p.device_quoted.replace_all(&text, "$1'[device]'");
     match &p.profile {
         Some(profile) => profile.replace_all(&text, "[user]").into_owned(),
         None => text.into_owned(),
@@ -130,6 +138,11 @@ mod tests {
         assert_eq!(redact("get https://a.b/c.m4s?sign=1&t=2 ok"), "get https://a.b/c.m4s?[redacted] ok");
         assert_eq!(redact(r#"> adb "-s" "R58N123" "shell""#), r#"> adb "-s" "[device]" "shell""#);
         assert_eq!(redact("R58N123\tdevice product:x"), "[device]\tdevice product:x");
+        assert_eq!(redact("adb: device 'R58N123' not found"), "adb: device '[device]' not found");
+        assert_eq!(redact("error: device \"R58N123\" not found"), "error: device '[device]' not found");
+        assert_eq!(redact("R58N123          recovery usb:1-1"), "[device]          recovery usb:1-1");
+        assert_eq!(redact("R58N123\tno permissions (user in plugdev)"), "[device]\tno permissions (user in plugdev)");
+        assert_eq!(redact("R58N123          sideload"), "[device]          sideload");
         let profile = std::env::var("USERPROFILE").unwrap();
         assert_eq!(redact(&format!("{}\\Videos\\a.mp4", profile.to_uppercase())), "[user]\\Videos\\a.mp4");
         assert_eq!(redact(&format!("\"{}\"", profile.replace('\\', "\\\\"))), "\"[user]\"");

@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
+// PascalCase mirrors settings.json, which the C# version also reads; SettingsInput is the camelCase command argument.
 export interface Settings {
   Adb: string
   Ffmpeg: string

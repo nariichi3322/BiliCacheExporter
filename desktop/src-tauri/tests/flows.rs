@@ -255,6 +255,23 @@ fn disconnect_during_scan_leaves_nothing_exportable() {
     let e = h.app.export(r.generation, vec![sel(0)]).unwrap_err();
     assert!(e.message.contains("已離線或已拔除"), "{}", e.message);
     assert!(h.phone.lock().unwrap().pulls.iter().all(|p| p.ends_with("cover.jpg")));
+    let lines = h.log.lines();
+    assert!(lines.iter().any(|l| l.contains("device '[device]' not found")), "ADB disconnect error was logged");
+    assert!(lines.iter().all(|l| !l.contains(SERIAL)), "serial must not reach the log");
+}
+
+#[test]
+fn cancel_during_scan_leaves_no_list() {
+    let mut phone = Phone::one_device();
+    let first = phone.add("1/c_1", "A", &["80"], true);
+    phone.add("2/c_2", "B", &["80"], true);
+    phone.cancel_pull = Some(format!("{first}/cover.jpg"));
+    let h = harness(phone);
+    let e = h.app.connect(None).unwrap_err();
+    assert!(e.cancelled, "{}", e.message);
+    let snap = h.app.snapshot();
+    assert!(snap.items.is_empty() && snap.serial.is_none());
+    assert!(!h.app.is_busy(), "user can connect again");
 }
 
 #[test]

@@ -124,6 +124,32 @@ describe('compact list', () => {
     expect(w.find('pre.logs').exists()).toBe(true)
   })
 
+  it('empty phone list offers rescan; scanning offers cancel', async () => {
+    let finish!: (v: unknown) => void
+    handlers.connect = () => new Promise(r => { finish = r })
+    const w = await start()
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    await w.findAll('button').find(b => b.text() === '取消')!.trigger('click')
+    expect(calls.some(c => c.cmd === 'cancel')).toBe(true)
+    finish({ ...connected, items: [] })
+    await flushPromises()
+    expect(w.text()).toContain('這部手機沒有國際版快取影片')
+    handlers.scan = () => ({ ...connected, items: [], generation: 2 })
+    await w.findAll('button').find(b => b.text() === '重新掃描')!.trigger('click')
+    await flushPromises()
+    expect(calls.some(c => c.cmd === 'scan')).toBe(true)
+  })
+
+  it('quality menu shows the automatically chosen version', async () => {
+    handlers.connect = () => ({ ...connected, items: [item(0, { variants: [variant('80'), variant('64', '缺少 video.m4s 或 audio.m4s')], autoVariant: 0 })] })
+    const w = await start()
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    expect((w.get('li.row select').element as HTMLSelectElement).value).toBe('0')
+    expect(w.get('li.row input[type=checkbox]').attributes('disabled')).toBeUndefined()
+  })
+
   it('a late, older tool check does not overwrite a newer result', async () => {
     let releaseFirst!: (v: unknown) => void
     let n = 0

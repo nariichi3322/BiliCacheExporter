@@ -223,7 +223,7 @@ impl Phone {
             other => panic!("unexpected adb command {other}"),
         }
         if self.disconnected || !self.devices.contains(&format!("{}\tdevice", args[1])) {
-            return Err(Error::Failed("adb: device not found".into()));
+            return Err(Error::Failed(format!("adb: device '{}' not found", args[1])));
         }
         match args[2].as_str() {
             "shell" => {
