@@ -13,14 +13,15 @@ vi.mock('@tauri-apps/api/core', () => ({
     return h(args)
   }),
 }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
+let emit: (payload: unknown) => void = () => {}
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (_: string, cb: (e: { payload: unknown }) => void) => { emit = payload => cb({ payload }); return () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => null) }))
 
 import App from './App.vue'
 
 const variant = (q: string, issue = '') => ({ video: 'v', audio: 'a', videoSize: 1048576, audioSize: 1048576, quality: q, issue })
 const item = (id: number, extra: Partial<CacheItem> = {}): CacheItem => ({
-  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], ...extra,
+  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], source: '國際版（com.bilibili.app.in）', ...extra,
 })
 const items = [
   item(0),
@@ -72,6 +73,8 @@ describe('compact list', () => {
     expect(boxes[1].attributes('disabled')).toBeDefined()
     expect(boxes[2].attributes('disabled')).toBeDefined()
     expect(rows[2].text()).toContain('下載尚未完成')
+    expect(rows[1].get('details').text()).toContain('來源：國際版（com.bilibili.app.in）')
+    expect(rows[1].get('.title').text()).not.toContain('國際版')
     const all = w.get('.toolbar input[type=checkbox]')
     await all.setValue(true)
     expect(w.text()).toContain('已選 1 部')
@@ -265,11 +268,24 @@ describe('compact list', () => {
     expect(calls.some(c => c.cmd === 'cancel')).toBe(true)
     finish({ ...connected, items: [] })
     await flushPromises()
-    expect(w.text()).toContain('這部手機沒有國際版快取影片')
+    expect(w.text()).toContain('這部手機沒有 Bilibili 快取影片')
     handlers.scan = () => ({ ...connected, items: [], generation: 2 })
     await w.findAll('button').find(b => b.text() === '重新掃描')!.trigger('click')
     await flushPromises()
     expect(calls.some(c => c.cmd === 'scan')).toBe(true)
+  })
+
+  it('a re-sent row during scanning replaces the earlier one', async () => {
+    let finish!: (v: unknown) => void
+    handlers.connect = () => new Promise(r => { finish = r })
+    const w = await start()
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    emit({ type: 'item', item: item(0) })
+    emit({ type: 'item', item: item(0, { title: '合併後' }) })
+    await flushPromises()
+    expect(w.findAll('li.row').map(r => r.get('.title').text())).toEqual(['合併後'])
+    finish({ ...connected, items: [] })
   })
 
   it('quality menu shows the automatically chosen version', async () => {

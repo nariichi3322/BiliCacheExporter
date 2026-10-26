@@ -1,8 +1,10 @@
-# Bili Cache Exporter (Android international app → Windows)
+# Bili Cache Exporter (Android app → Windows)
 
 [繁體中文](README.md) | English
 
 Connect your Android phone → press Connect → pick videos and quality → export MP4 files with their original covers.
+
+Supports the cache of both the international (`com.bilibili.app.in`) and China (`tv.danmaku.bili`) Bilibili apps.
 
 The app's interface is in Traditional Chinese; the button names below give the Chinese label in brackets.
 
@@ -28,7 +30,7 @@ The app's interface is in Traditional Chinese; the button names below give the C
 - `log\`: one log file per run, never uploaded automatically; device serials, URL parameters and personal paths are masked, but video titles may still appear.
 - `tools\`: ADB (Google platform-tools r37.0.1) and FFmpeg/FFprobe (gyan.dev essentials 9.0.1, GPLv3), downloaded only when you ask. Tool locations are stored as relative paths, so they are still found after moving the whole folder.
 - `.bili-jobs\`: ownership records for temporary export files; after an abnormal exit, the next start offers to clean leftovers that provably belong to this program.
-- The phone's cache is only ever read. Only the separate M4S cache of `com.bilibili.app.in` is handled; no login, no root, and no attempt to decrypt or patch DRM.
+- The phone's cache is only ever read. Only the separate M4S cache of the international app `com.bilibili.app.in` and the China app `tv.danmaku.bili` is handled (a video cached by both apps is one row whose qualities are chosen together; Cache details (「快取詳情」) shows the source); no login, no root, and no attempt to decrypt or patch DRM.
 - `LICENSE` is this project's MIT license; `licenses\THIRD-PARTY.txt` lists third-party dependencies with full license texts, copyright notices and source locations (build dependencies included, so not every component ends up in the EXE). The WebView2 runtime keeps its own data in the Windows user folder (normal system cache).
 
 ## Building from source (developers)

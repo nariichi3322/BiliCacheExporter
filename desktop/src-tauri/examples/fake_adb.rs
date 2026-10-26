@@ -71,8 +71,11 @@ fn run(phone: &Path, args: &[String]) -> i32 {
         }
         "shell" => {
             let c = &args[3];
-            if c == "pm list packages --user 0 com.bilibili.app.in" {
-                println!("package:com.bilibili.app.in");
+            // An app counts as installed when its data folder exists on the fake phone.
+            if let Some(package) = c.strip_prefix("pm list packages --user 0 ") {
+                if phone.join("sdcard/Android/data").join(package).is_dir() {
+                    println!("package:{package}");
+                }
                 return 0;
             }
             if let Some(rest) = c.strip_prefix("find ") {

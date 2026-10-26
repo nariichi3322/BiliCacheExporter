@@ -4,7 +4,7 @@
 use bili_core::app::{App, Event};
 use bili_core::log::Logger;
 use bili_core::runner::{strings, Runner};
-use bili_core::scan::ROOT;
+use bili_core::scan::{CHINA_ROOT, ROOT};
 use bili_core::tools::Fetch;
 use bili_core::{Cancel, Error, Res};
 use std::collections::BTreeMap;
@@ -139,6 +139,7 @@ pub fn tempdir() -> PathBuf {
 pub struct Phone {
     pub devices: String,
     pub package: bool,
+    pub china: bool,
     pub files: BTreeMap<String, Vec<u8>>,
     pub extra_entries: Vec<String>,
     pub disconnected: bool,
@@ -160,7 +161,11 @@ impl Phone {
 
     /// Adds one part with the given quality directories; each holds video/audio (and index.json when `meta`).
     pub fn add(&mut self, id: &str, title: &str, qualities: &[&str], cover: bool) -> String {
-        let remote = format!("{ROOT}{id}");
+        self.add_in(ROOT, id, title, qualities, cover)
+    }
+
+    pub fn add_in(&mut self, root: &str, id: &str, title: &str, qualities: &[&str], cover: bool) -> String {
+        let remote = format!("{root}{id}");
         let m = media();
         self.files.insert(format!("{remote}/entry.json"), format!(r#"{{"title":"{title}","is_completed":true,"page_data":{{"part":"第一集"}}}}"#).into_bytes());
         for q in qualities {
@@ -181,14 +186,21 @@ impl Phone {
     fn shell(&mut self, command: &str) -> Res<String> {
         let unquote = |s: &str| s.trim().strip_prefix('\'').and_then(|x| x.strip_suffix('\'')).expect("quoted argument").replace("'\"'\"'", "'");
         if let Some(rest) = command.strip_prefix("pm list packages --user 0 ") {
-            assert_eq!(rest, "com.bilibili.app.in");
-            return Ok(if self.package { "package:com.bilibili.app.in\n".into() } else { String::new() });
+            let installed = match rest {
+                "com.bilibili.app.in" => self.package,
+                "tv.danmaku.bili" => self.china,
+                other => panic!("unexpected package query {other}"),
+            };
+            return Ok(if installed { format!("package:{rest}\n") } else { String::new() });
         }
         if let Some(rest) = command.strip_prefix("find ") {
             if let Some(root) = rest.strip_suffix(" -type f -name entry.json") {
-                assert_eq!(unquote(root), ROOT);
-                let mut lines: Vec<String> = self.files.keys().filter(|k| k.ends_with("/entry.json")).cloned().collect();
-                lines.extend(self.extra_entries.clone());
+                let root = unquote(root);
+                assert!((root == ROOT && self.package) || (root == CHINA_ROOT && self.china), "scanned an app that is not installed: {root}");
+                let mut lines: Vec<String> = self.files.keys().filter(|k| k.starts_with(&root) && k.ends_with("/entry.json")).cloned().collect();
+                if root == ROOT {
+                    lines.extend(self.extra_entries.clone());
+                }
                 return Ok(lines.join("\n"));
             }
             let dir = unquote(rest.strip_suffix(" -type f").expect("find form"));

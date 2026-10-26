@@ -1,8 +1,10 @@
-# Bili 快取匯出（Android 國際版 App → Windows）
+# Bili 快取匯出（Android App → Windows）
 
 繁體中文 | [English](README.en.md)
 
 接上 Android 手機 → 按「連線」→ 勾選影片與畫質 → 匯出附原始封面的 MP4。
+
+支援 Bilibili 國際版（`com.bilibili.app.in`）與中國版（`tv.danmaku.bili`）App 的快取。
 
 ## 開始使用
 
@@ -26,7 +28,7 @@
 - `log\`：每次執行一個記錄檔，不會自動上傳；裝置序號、網址參數與個人路徑會遮蔽，但影片標題仍可能出現。
 - `tools\`：按需下載的 ADB（Google platform-tools r37.0.1）與 FFmpeg／FFprobe（gyan.dev essentials 9.0.1，GPLv3）。工具位置以相對路徑保存，搬移整個資料夾後仍可找到。
 - `.bili-jobs\`：匯出暫存的歸屬紀錄；異常關閉後再次啟動會提示清理可確認屬於本程式的殘留。
-- 全程唯讀手機快取，只處理 `com.bilibili.app.in` 的分離 M4S 快取；不登入、不 Root、不嘗試 DRM 解密或修補。
+- 全程唯讀手機快取，只處理國際版 `com.bilibili.app.in` 與中國版 `tv.danmaku.bili` 的分離 M4S 快取（兩個 App 都有的同一部影片合併成一列，畫質一起選；「快取詳情」顯示來源）；不登入、不 Root、不嘗試 DRM 解密或修補。
 - `LICENSE` 是本專案的 MIT 授權；`licenses\THIRD-PARTY.txt` 收錄第三方依賴清單、授權全文、著作權聲明與原始碼來源（包含建置依賴，並非每個元件都進入 EXE）。WebView2 執行環境另存於 Windows 使用者資料夾（系統正常快取）。
 
 ## 從原始碼建置（開發者）
