@@ -190,7 +190,8 @@ for (let i = 0; i < 12 && !reached; i++) {
 }
 check(reached, 'Keyboard Tab reaches the 連線 button')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
-check(await app.waitFor("document.querySelectorAll('li.row').length === 4"), 'Connect by keyboard scans automatically and lists 4 rows')
+const connected = await app.waitFor("document.querySelectorAll('li.row').length === 4")
+check(connected, 'Connect by keyboard scans automatically and lists 4 rows', connected ? '' : String(await app.eval("document.querySelector('.notice')?.innerText ?? document.querySelector('.footer')?.innerText")))
 const deviceCalls = calls(dir).filter(c => c[0] === 'devices').length
 check(deviceCalls === 1, 'Exactly one device listing for the connect action', String(deviceCalls))
 check(await app.eval("[...document.querySelectorAll('li.row input[type=checkbox]')].every(b => !b.checked)"), 'All rows start unselected')

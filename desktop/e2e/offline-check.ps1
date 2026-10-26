@@ -29,10 +29,31 @@ while (Test-Online) {
     Start-Sleep -Seconds 3
 }
 $started = Get-Date
-Write-Host '已離線，開始以正式包執行完整流程（約 2–3 分鐘，期間會開關程式視窗）…' -ForegroundColor Cyan
 $work = Join-Path $Package 'offline-check'
 if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
-& node (Join-Path $PSScriptRoot 'package-e2e.mjs') $exe $fakeAdb $ffmpeg $work
+New-Item -ItemType Directory -Path $work | Out-Null
+
+# How long freshly copied / signed tools take to start while offline (a stall here explains a connect timeout).
+Write-Host '已離線，先量測工具啟動時間…' -ForegroundColor Cyan
+$freshCopy = Join-Path $work 'fresh-copy\adb.exe'
+New-Item -ItemType Directory -Path (Split-Path $freshCopy) | Out-Null
+Copy-Item -LiteralPath $fakeAdb -Destination $freshCopy
+$googleAdb = Get-ChildItem -Path (Join-Path $repo 'dist-desktop\*\acceptance-09\BiliCacheExporter-win-x64\tools\adb\adb.exe') -ErrorAction SilentlyContinue | Select-Object -First 1
+$launches = @(
+    @{ name = 'fake_adb fresh copy (unsigned test double)'; exe = $freshCopy; args = 'version' },
+    @{ name = 'Google adb.exe (signed)'; exe = $googleAdb.FullName; args = 'version' },
+    @{ name = 'ffprobe'; exe = (Join-Path (Split-Path $ffmpeg) 'ffprobe.exe'); args = '-version' }
+) | Where-Object { $_.exe } | ForEach-Object {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $p = Start-Process -FilePath $_.exe -ArgumentList $_.args -PassThru -WindowStyle Hidden
+    $done = $p.WaitForExit(60000)
+    if (!$done) { $p.Kill() }
+    [ordered]@{ name = $_.name; seconds = [math]::Round($sw.Elapsed.TotalSeconds, 2); finished = $done }
+}
+$launches | ForEach-Object { Write-Host ("  {0}: {1}s{2}" -f $_.name, $_.seconds, $(if ($_.finished) { '' } else { '（60 秒未結束）' })) }
+
+Write-Host '開始以正式包執行完整流程（約 2–3 分鐘，期間會開關程式視窗）…' -ForegroundColor Cyan
+& node (Join-Path $PSScriptRoot 'package-e2e.mjs') $exe $fakeAdb $ffmpeg $work 2>&1 | Tee-Object -FilePath (Join-Path $work 'e2e-console.log')
 $e2eExit = $LASTEXITCODE
 $stillOffline = -not (Test-Online)
 $results = Get-Content -LiteralPath (Join-Path $work 'evidence\e2e-results.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
@@ -40,6 +61,7 @@ $report = [ordered]@{
     started = $started.ToString('o'); finished = (Get-Date).ToString('o')
     offlineAtStart = $true; offlineAtEnd = $stillOffline
     e2eExitCode = $e2eExit
+    toolLaunches = $launches
     passed = @($results.results | Where-Object ok).Count; total = @($results.results).Count
     failed = @($results.results | Where-Object { -not $_.ok } | ForEach-Object name)
     package = (Split-Path $Package -Leaf)
