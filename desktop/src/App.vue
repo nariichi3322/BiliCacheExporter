@@ -534,7 +534,7 @@ onMounted(async () => {
                 <div class="meta">
                   <select v-if="item.variants.length > 1 && !item.issue" :aria-label="'畫質：' + item.title" :value="s.choices[item.id] ?? item.autoVariant ?? ''" :disabled="busy" @change="choose(item, ($event.target as HTMLSelectElement).value)">
                     <option value="" disabled>選擇畫質（{{ item.variants.length }} 個版本）</option>
-                    <option v-for="(v, i) in item.variants" :key="i" :value="i" :disabled="!!v.issue">{{ v.quality }} · {{ mb(v.videoSize + v.audioSize) }}{{ v.issue ? ' · 不可用：' + v.issue : '' }}</option>
+                    <option v-for="(v, i) in item.variants" :key="i" :value="i" :disabled="!!v.issue">{{ v.label }} ·{{ mb(v.videoSize + v.audioSize) }}{{ v.issue ? ' · 不可用：' + v.issue : '' }}</option>
                   </select>
                   <span v-else>{{ item.quality || '畫質未知' }}</span>
                   <span v-if="reason(item)" class="warning"> · {{ reason(item) }}</span>

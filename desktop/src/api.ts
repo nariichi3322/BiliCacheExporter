@@ -17,7 +17,7 @@ export interface Settings {
 }
 
 export interface Device { serial: string; state: string; detail: string }
-export interface Variant { video: string; audio: string; videoSize: number; audioSize: number; quality: string; issue: string }
+export interface Variant { video: string; audio: string; videoSize: number; audioSize: number; quality: string; label: string; issue: string }
 export interface FileInfo { path: string; size: number | null; error: string }
 export interface CacheItem {
   id: number
