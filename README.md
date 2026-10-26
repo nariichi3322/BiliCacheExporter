@@ -2,7 +2,7 @@
 
 接上 Android 手機 → 按「連線」→ 勾選影片與畫質 → 匯出附原始封面的 MP4。
 
-本版以 Tauri、Vue 3 與 Rust 改寫；舊 C#／WinForms 版保留在專案根目錄，兩者可並存。
+本版以 Tauri、Vue 3 與 Rust 改寫，取代舊的 C#／WinForms 版。
 
 ## 開始使用
 
@@ -42,3 +42,9 @@ npx tauri dev                                   # 開發模式
 ```
 
 `package.ps1` 會檢查包內容只有一個 EXE、量測啟動與閒置記憶體、模擬缺少 WebView2，並用測試專用的假手機（`src-tauri/examples/fake_adb.rs`，不隨包散布）搭配真實 FFmpeg 驅動正式 EXE。加 `-WithDownload` 會在正式包內實際下載 ADB。以上都不是真手機驗收。
+
+提交前檢查：在 `.check-local.psd1`（不提交）以 PowerShell 資料檔格式設定 `FFmpeg` 執行檔完整路徑，執行 `git config core.hooksPath .githooks` 啟用；之後每次提交都會跑根目錄 `check.ps1`（即 `desktop/check.ps1`）。
+
+## 開發協作
+
+本專案在開發過程中使用了 OpenAI Codex 與 Anthropic Claude Code 協助撰寫程式與文件。
