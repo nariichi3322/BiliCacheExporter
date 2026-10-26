@@ -43,6 +43,8 @@ npx tauri dev                                   # 開發模式
 
 `package.ps1` 會檢查包內容只有一個 EXE、量測啟動與閒置記憶體、模擬缺少 WebView2，並用測試專用的假手機（`src-tauri/examples/fake_adb.rs`，不隨包散布）搭配真實 FFmpeg 驅動正式 EXE。加 `-WithDownload` 會在正式包內實際下載 ADB。以上都不是真手機驗收。
 
+只想重跑介面整合流程（`check.ps1` 不涵蓋，改到畫面文字、按鈕或流程時需要）：在 `desktop` 執行 `npx tauri build` 與 `cargo build --release --example fake_adb`（於 `src-tauri`），再執行 `node e2e\package-e2e.mjs src-tauri\target\release\BiliCacheExporter.exe src-tauri\target\release\examples\fake_adb.exe 'D:\path\to\ffmpeg.exe' <新的空資料夾>`。這會略過程式內更新那一段，完整驗證仍以 `package.ps1` 為準。
+
 提交前檢查：在 `.check-local.psd1`（不提交）以 PowerShell 資料檔格式設定 `FFmpeg` 執行檔完整路徑，執行 `git config core.hooksPath .githooks` 啟用；之後每次提交都會跑根目錄 `check.ps1`（即 `desktop/check.ps1`）。
 
 ## 開發協作

@@ -1,14 +1,15 @@
 // End-to-end check of the packaged app: fake phone (test-only fake adb) + real FFmpeg/FFprobe.
 // Drives the real WebView2 window over the DevTools protocol. Usage:
-//   node e2e/package-e2e.mjs <BiliCacheExporter.exe> <fake_adb.exe> <ffmpeg.exe> <work dir> [--with-download]
+//   node e2e/package-e2e.mjs <BiliCacheExporter.exe> <fake_adb.exe> <ffmpeg.exe> <work dir> [--with-download] [--update-release <dir>]
+// --update-release: a release folder made by package-shape.ps1's Complete-Package (see package.ps1); without it the update run is skipped.
 import { spawn, execFileSync } from 'node:child_process'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 
 const [exe, fakeAdb, ffmpeg, work] = process.argv.slice(2)
 const withDownload = process.argv.includes('--with-download')
+const updateRelease = process.argv.includes('--update-release') ? process.argv[process.argv.indexOf('--update-release') + 1] : null
 const ffprobe = path.join(path.dirname(ffmpeg), 'ffprobe.exe')
 const evidence = path.join(work, 'evidence')
 fs.mkdirSync(evidence, { recursive: true })
@@ -384,31 +385,25 @@ await app.close()
 }
 
 // ---------- C: in-app update replaces the running EXE and restarts it ----------
-// The "new release" is this build plus marker bytes appended after the PE image (still runnable), so the
-// swapped-in file is identifiable without a second build; both report the same version.
-{
+// The release folder comes from the same Complete-Package as real releases, and every file in it is served
+// under its own name, so a renamed asset or a changed zip layout breaks this run. Its EXE is this build plus
+// marker bytes appended after the PE image (still runnable): identifiable without a second build, same version.
+if (updateRelease) {
   const dir = makeFolder('update', { tools: true, checkUpdates: true })
   const target = path.join(dir, 'BiliCacheExporter.exe')
-  const oldBytes = fs.readFileSync(target)
-  const newBytes = Buffer.concat([oldBytes, Buffer.from('\nBILI-E2E-UPDATE-MARKER\n')])
-  const release = path.join(work, 'update-release')
-  fs.rmSync(release, { recursive: true, force: true })
-  fs.mkdirSync(path.join(release, 'BiliCacheExporter-win-x64'), { recursive: true })
-  fs.writeFileSync(path.join(release, 'BiliCacheExporter-win-x64', 'BiliCacheExporter.exe'), newBytes)
-  const zip = path.join(release, 'BiliCacheExporter-win-x64.zip')
-  run('powershell', ['-NoProfile', '-Command', `Compress-Archive -LiteralPath '${path.join(release, 'BiliCacheExporter-win-x64')}' -DestinationPath '${zip}'`])
-  const zipBytes = fs.readFileSync(zip)
-  const sums = `${crypto.createHash('sha256').update(zipBytes).digest('hex').toUpperCase()}  BiliCacheExporter-win-x64.zip\n`
+  const newBytes = fs.readFileSync(path.join(updateRelease, 'BiliCacheExporter-win-x64', 'BiliCacheExporter.exe'))
+  const assets = fs.readdirSync(updateRelease).filter(n => fs.statSync(path.join(updateRelease, n)).isFile())
   const served = []
   const server = http.createServer((req, res) => {
     served.push(req.url)
-    const routes = {
-      '/repos/nariichi3322/BiliCacheExporter/releases/latest': JSON.stringify({ tag_name: 'v99.0.0', body: '- 端到端測試用的假版本', assets: [{ name: 'BiliCacheExporter-win-x64.zip', size: zipBytes.length }] }),
-      '/nariichi3322/BiliCacheExporter/releases/download/v99.0.0/SHA256.txt': sums,
-      '/nariichi3322/BiliCacheExporter/releases/download/v99.0.0/BiliCacheExporter-win-x64.zip': zipBytes,
+    const download = '/nariichi3322/BiliCacheExporter/releases/download/v99.0.0/'
+    if (req.url === '/repos/nariichi3322/BiliCacheExporter/releases/latest') {
+      const list = assets.map(name => ({ name, size: fs.statSync(path.join(updateRelease, name)).size }))
+      return res.writeHead(200).end(JSON.stringify({ tag_name: 'v99.0.0', body: '- 端到端測試用的假版本', assets: list }))
     }
-    if (!(req.url in routes)) return res.writeHead(404).end()
-    res.writeHead(200).end(routes[req.url])
+    const name = req.url.startsWith(download) ? decodeURIComponent(req.url.slice(download.length)) : ''
+    if (!assets.includes(name)) return res.writeHead(404).end()
+    res.writeHead(200).end(fs.readFileSync(path.join(updateRelease, name)))
   })
   await new Promise(r => server.listen(0, '127.0.0.1', r))
   const source = `http://127.0.0.1:${server.address().port}`
@@ -452,6 +447,8 @@ await app.close()
     if (newPid) process.kill(newPid)
   }
   server.close()
+} else {
+  console.log('SKIP in-app update run (no --update-release)')
 }
 
 const remote = [...new Set(requests)].filter(u => !/^(https?:\/\/(tauri|ipc)\.localhost\/|data:|blob:|about:)/.test(u))
