@@ -23,7 +23,10 @@ pub struct Variant {
     pub audio: String,
     pub video_size: u64,
     pub audio_size: u64,
+    /// Full metadata for 快取詳情, e.g. "80（快取目錄） · bandwidth=…, width=1920".
     pub quality: String,
+    /// Short form for the row, e.g. "1920×1080"; the quality menu prefixes the cache directory name.
+    pub label: String,
     pub issue: String,
 }
 
@@ -115,6 +118,37 @@ impl Adb<'_> {
         value.trim().parse::<u64>().map_err(|_| Error::Failed(format!("無法取得檔案大小：{path}")))
     }
 
+    /// Every file under `dir` with its size, in one adb call. If that call fails (e.g. a file vanished mid-scan),
+    /// falls back to one stat per file so a single bad file only marks its own inventory line.
+    fn list_sizes(&self, serial: &str, dir: &str, cancel: &Cancel) -> Res<Vec<(String, Result<u64, String>)>> {
+        let mut files: Vec<(String, Result<u64, String>)> = Vec::new();
+        match self.shell(serial, &format!("find {} -type f -exec stat -c '%s %n' {{}} +", quote(dir)), cancel) {
+            Ok(out) => {
+                for line in out.lines().map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty()) {
+                    let Some((size, path)) = line.split_once(' ') else { return fail("手機回傳無法解析的檔案清單。") };
+                    if !files.iter().any(|(f, _)| f == path) {
+                        files.push((path.into(), size.parse().map_err(|_| format!("無法取得檔案大小：{path}"))));
+                    }
+                }
+            }
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => {
+                self.runner.log(&format!("一次盤點失敗，改為逐檔查詢大小：{e}"));
+                let listing = self.shell(serial, &format!("find {} -type f", quote(dir)), cancel)?;
+                for f in listing.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
+                    if !files.iter().any(|(x, _)| x == f) {
+                        let size = match self.size(serial, f, cancel) {
+                            Err(Error::Cancelled) => return Err(Error::Cancelled),
+                            r => r.map_err(|e| e.to_string()),
+                        };
+                        files.push((f.into(), size));
+                    }
+                }
+            }
+        }
+        Ok(files)
+    }
+
     /// Read-only scan of every installed supported app's cache. Problems stay on their own row.
     pub fn scan(&self, serial: &str, cancel: &Cancel, found: &mut dyn FnMut(&CacheItem)) -> Res<Vec<CacheItem>> {
         let mut installed = Vec::new();
@@ -188,17 +222,13 @@ impl Adb<'_> {
                 self.runner.log(&item.issue);
             }
         }
-        let listing = self.shell(serial, &format!("find {} -type f", quote(&remote)), cancel)?;
-        let mut files: Vec<String> = Vec::new();
-        for f in listing.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
-            if !files.iter().any(|x| x == f) {
-                files.push(f.to_string());
-            }
-        }
-        if files.iter().any(|p| !is_child_path(p, &remote)) {
+        let sized = self.list_sizes(serial, &remote, cancel)?;
+        if sized.iter().any(|(p, _)| !is_child_path(p, &remote)) {
             return fail("手機回傳不合法的項目檔案路徑。");
         }
-        let has = |p: &str| files.iter().any(|f| f == p);
+        let files: Vec<&String> = sized.iter().map(|(p, _)| p).collect();
+        let has = |p: &str| files.iter().any(|f| *f == p);
+        let size = |p: &str| sized.iter().find(|(f, _)| f == p).map(|(_, s)| s.clone().map_err(Error::Failed)).unwrap();
         let mut quality_dirs: Vec<&str> = Vec::new();
         for f in &files {
             if f.ends_with("/video.m4s") || f.ends_with("/audio.m4s") {
@@ -209,28 +239,35 @@ impl Adb<'_> {
             }
         }
         for dir in quality_dirs {
+            let name = &dir[dir.rfind('/').unwrap() + 1..];
             let mut variant =
-                Variant { issue: item.issue.clone(), quality: format!("{}（快取目錄）", &dir[dir.rfind('/').unwrap() + 1..]), ..Default::default() };
+                Variant { issue: item.issue.clone(), quality: format!("{name}（快取目錄）"), label: "解析度未知".into(), ..Default::default() };
             let result: Res<()> = (|| {
                 variant.video = if has(&format!("{dir}/video.m4s")) { format!("{dir}/video.m4s") } else { String::new() };
                 variant.audio = if has(&format!("{dir}/audio.m4s")) { format!("{dir}/audio.m4s") } else { String::new() };
                 if variant.video.is_empty() || variant.audio.is_empty() {
                     variant.issue = "缺少 video.m4s 或 audio.m4s".into();
                 } else {
-                    variant.video_size = self.size(serial, &variant.video, cancel)?;
-                    variant.audio_size = self.size(serial, &variant.audio, cancel)?;
+                    variant.video_size = size(&variant.video)?;
+                    variant.audio_size = size(&variant.audio)?;
                     if variant.video_size == 0 || variant.audio_size == 0 {
                         variant.issue = "影音檔案為空".into();
                     }
                 }
                 if has(&format!("{dir}/index.json")) {
                     // Optional quality metadata: failure degrades the label but never blocks complete media.
-                    match self.shell(serial, &format!("cat {}", quote(&format!("{dir}/index.json"))), cancel).and_then(|j| quality(&j)) {
-                        Ok(q) => variant.quality += &format!(" · {q}"),
+                    match self.shell(serial, &format!("cat {}", quote(&format!("{dir}/index.json"))), cancel).and_then(|j| Ok((quality(&j)?, resolution(&j)))) {
+                        Ok((q, r)) => {
+                            variant.quality += &format!(" · {q}");
+                            if let Some(r) = r {
+                                variant.label = r;
+                            }
+                        }
                         Err(Error::Cancelled) => return Err(Error::Cancelled),
                         Err(e) => {
                             self.runner.log(&format!("index.json 讀取／解析失敗：{e}"));
                             variant.quality += " · 畫質資料無法讀取／解析";
+                            variant.label = "畫質資料無法讀取".into();
                         }
                     }
                 }
@@ -249,13 +286,12 @@ impl Adb<'_> {
             }
             item.variants.push(variant);
         }
-        for file in &files {
-            match self.size(serial, file, cancel) {
-                Ok(size) => item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: Some(size), error: String::new() }),
-                Err(Error::Cancelled) => return Err(Error::Cancelled),
+        for (file, size) in &sized {
+            match size {
+                Ok(size) => item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: Some(*size), error: String::new() }),
                 Err(e) => {
                     self.runner.log(&format!("盤點大小失敗：{file}：{e}"));
-                    item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: None, error: e.to_string() });
+                    item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: None, error: e.clone() });
                 }
             }
         }
@@ -305,7 +341,7 @@ fn settle(item: &mut CacheItem) {
     let usable: Vec<usize> = (0..item.variants.len()).filter(|&i| item.variants[i].issue.is_empty()).collect();
     if usable.len() == 1 {
         item.auto_variant = Some(usable[0]);
-        item.quality = item.variants[usable[0]].quality.clone();
+        item.quality = item.variants[usable[0]].label.clone();
     } else if item.variants.len() > 1 {
         item.quality = format!("{} 個版本（需選擇畫質）", item.variants.len());
         if item.issue.is_empty() {
@@ -317,7 +353,7 @@ fn settle(item: &mut CacheItem) {
         }
     } else if item.variants.len() == 1 {
         item.issue = item.variants[0].issue.clone();
-        item.quality = item.variants[0].quality.clone();
+        item.quality = item.variants[0].label.clone();
     } else if item.issue.is_empty() {
         item.issue = "缺少分離影音；此格式待辨識／不支援".into();
     }
@@ -397,6 +433,27 @@ pub fn quality(json: &str) -> Res<String> {
     Ok(if result.is_empty() { "index.json 未提供可辨識畫質欄位".into() } else { result.join(", ") })
 }
 
+/// Largest video resolution in index.json, e.g. "1920×1080"; audio streams report 0×0 and never win.
+pub fn resolution(json: &str) -> Option<String> {
+    fn walk(e: &Value, best: &mut (u64, u64)) {
+        match e {
+            Value::Object(map) => {
+                if let (Some(w), Some(h)) = (map.get("width").and_then(Value::as_u64), map.get("height").and_then(Value::as_u64)) {
+                    if w.saturating_mul(h) > best.0.saturating_mul(best.1) {
+                        *best = (w, h);
+                    }
+                }
+                map.values().for_each(|v| walk(v, best));
+            }
+            Value::Array(items) => items.iter().for_each(|v| walk(v, best)),
+            _ => {}
+        }
+    }
+    let mut best = (0, 0);
+    walk(&serde_json::from_str(json).ok()?, &mut best);
+    (best.0 > 0 && best.1 > 0).then(|| format!("{}×{}", best.0, best.1))
+}
+
 /// Windows-safe output name: illegal characters, reserved device names, trailing dots and length.
 pub fn file_name(title: &str) -> String {
     let mut name: String = title.chars().map(|c| if "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20 { '_' } else { c }).collect();
@@ -435,5 +492,13 @@ mod tests {
         assert!(!is_child_path(&format!("{CHINA_ROOT}1/c_1/entry.json"), ROOT));
         assert_eq!(quote("a'b"), "'a'\"'\"'b'");
         assert_eq!(parse_devices("List of devices attached\nA device model:X\nB unauthorized\n* daemon\n").len(), 2);
+    }
+
+    #[test]
+    fn resolution_skips_audio_and_takes_the_largest_video() {
+        let index = r#"{"video":[{"width":1280,"height":720},{"width":1920,"height":1080}],"audio":[{"bandwidth":1,"width":0,"height":0}]}"#;
+        assert_eq!(resolution(index).as_deref(), Some("1920×1080"));
+        assert_eq!(resolution(r#"{"audio":[{"width":0,"height":0}]}"#), None);
+        assert_eq!(resolution("{ corrupt"), None);
     }
 }

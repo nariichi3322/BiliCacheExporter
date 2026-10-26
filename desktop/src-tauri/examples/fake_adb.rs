@@ -79,14 +79,18 @@ fn run(phone: &Path, args: &[String]) -> i32 {
                 return 0;
             }
             if let Some(rest) = c.strip_prefix("find ") {
+                let stat = rest.strip_suffix(" -type f -exec stat -c '%s %n' {} +");
                 let (target, entries) = match rest.strip_suffix(" -type f -name entry.json") {
                     Some(r) => (r, true),
-                    None => (rest.strip_suffix(" -type f").unwrap(), false),
+                    None => (stat.or_else(|| rest.strip_suffix(" -type f")).unwrap(), false),
                 };
                 let mut all = Vec::new();
                 files(&local(phone, unquote(target).trim_end_matches('/')), &mut all);
                 for f in all.iter().filter(|f| !entries || f.ends_with("entry.json")) {
-                    println!("{}", remote_of(phone, f))
+                    match stat {
+                        Some(_) => println!("{} {}", f.metadata().unwrap().len(), remote_of(phone, f)),
+                        None => println!("{}", remote_of(phone, f)),
+                    }
                 }
                 return 0;
             }

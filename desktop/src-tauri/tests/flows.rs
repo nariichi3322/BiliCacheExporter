@@ -211,7 +211,8 @@ fn scan_is_read_only_shows_real_metadata_and_isolates_bad_rows() {
     assert_eq!(item.title, "中文標題：測試 🎬 — 第一集");
     assert!(item.cover.as_ref().unwrap().starts_with("data:image/jpeg;base64,"));
     assert_eq!(item.auto_variant, Some(0), "single complete quality is the source");
-    assert!(item.quality.contains("80（快取目錄）") && item.quality.contains("width=160"));
+    assert_eq!(item.quality, "160×90", "row shows the short label");
+    assert!(item.variants[0].quality.contains("80（快取目錄）") && item.variants[0].quality.contains("width=160"), "details keep raw metadata");
     let broken = r.items.iter().find(|i| i.remote == bad).unwrap();
     assert!(broken.issue.contains("entry.json 無法解析"));
     let evil = r.items.iter().find(|i| i.title == "不合法的快取路徑").unwrap();
@@ -374,6 +375,7 @@ fn multi_quality_requires_explicit_valid_choice() {
     assert!(multi.needs_choice && multi.auto_variant.is_none() && multi.variants.len() == 2, "one row, two candidates");
     let q116 = multi.variants.iter().position(|v| v.quality.starts_with("116")).unwrap();
     assert!(multi.variants[q116].quality.contains("畫質資料無法讀取") && multi.variants[q116].issue.is_empty(), "bad optional metadata does not block media");
+    assert_eq!(multi.variants[q116].label, "畫質資料無法讀取", "readable fallback label");
     let single = r.items.iter().find(|i| i.remote == one).unwrap();
     let broken = single.variants.iter().position(|v| v.quality.starts_with("64")).unwrap();
     assert_eq!(single.auto_variant, Some(1 - broken));
@@ -411,6 +413,34 @@ fn incomplete_missing_empty_and_unknown_items_stay_visible_with_reasons() {
     for item in &r.items {
         assert!(h.app.export(r.generation, vec![sel(item.id)]).is_err());
     }
+}
+
+#[test]
+fn scan_reads_all_file_sizes_of_an_item_in_one_call() {
+    let mut phone = Phone::one_device();
+    phone.add("1/c_1", "一", &["80", "64"], true);
+    let h = harness(phone);
+    let r = h.app.connect(None).unwrap();
+    assert_eq!(r.items[0].variants.len(), 2);
+    assert!(r.items[0].inventory.iter().all(|f| f.size.is_some()));
+    let phone = h.phone.lock().unwrap();
+    let shells: Vec<&str> = phone.calls.iter().filter(|c| c[0] == "-s" && c[2] == "shell").map(|c| c[3].as_str()).collect();
+    assert!(!shells.iter().any(|c| c.starts_with("stat ")), "no per-file stat: {shells:?}");
+    assert_eq!(shells.iter().filter(|c| c.contains("-exec stat")).count(), 1);
+}
+
+#[test]
+fn a_file_that_cannot_be_sized_only_marks_its_own_line() {
+    let mut phone = Phone::one_device();
+    let remote = phone.add("1/c_1", "一", &["80"], false);
+    phone.files.insert(format!("{remote}/danmaku.xml"), b"x".to_vec());
+    phone.fail_stat = Some("danmaku.xml".into());
+    let h = harness(phone);
+    let item = h.app.connect(None).unwrap().items.remove(0);
+    assert_eq!(item.auto_variant, Some(0), "media still exportable: {:?}", item.variants);
+    let bad = item.inventory.iter().find(|f| f.path == "danmaku.xml").unwrap();
+    assert!(bad.size.is_none() && !bad.error.is_empty());
+    assert!(item.inventory.iter().filter(|f| f.path != "danmaku.xml").all(|f| f.size.is_some()));
 }
 
 // ---------- 04/05: single export, cover, safety ----------

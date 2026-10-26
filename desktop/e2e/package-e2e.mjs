@@ -20,6 +20,7 @@ const check = (ok, name, detail = '') => {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const ROOT = 'sdcard/Android/data/com.bilibili.app.in/download'
+const CHINA_ROOT = 'sdcard/Android/data/tv.danmaku.bili/download'
 const run = (file, args) => execFileSync(file, args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString()
 
 // ---------- fixtures ----------
@@ -30,8 +31,8 @@ function makePhone(dir) {
   ff(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+frag_keyframe+empty_moov', '-f', 'mp4', path.join(media, 'video.m4s')])
   ff(['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '2', '-c:a', 'aac', '-movflags', '+frag_keyframe+empty_moov', '-f', 'mp4', path.join(media, 'audio.m4s')])
   ff(['-f', 'lavfi', '-i', 'testsrc=size=640x360', '-frames:v', '1', path.join(media, 'cover.jpg')])
-  const add = (id, entry, qualities, cover) => {
-    const remote = path.join(dir, ROOT, id)
+  const add = (id, entry, qualities, cover, root = ROOT) => {
+    const remote = path.join(dir, root, id)
     fs.mkdirSync(remote, { recursive: true })
     fs.writeFileSync(path.join(remote, 'entry.json'), JSON.stringify(entry))
     for (const q of qualities) {
@@ -45,6 +46,9 @@ function makePhone(dir) {
   add('200/c_2', { title: '多畫質影片', is_completed: true, page_data: { part: 'P2' } }, ['80', '116'], true)
   add('300/c_3', { title: '尚未下載完成', is_completed: false }, ['80'], true)
   add('400/c_4', { title: '沒有封面的影片', is_completed: true }, ['64'], false)
+  // China app: one video only it has, and the multi-quality video again with a quality the international app lacks.
+  add('500/c_5', { title: '只在中國版的影片', is_completed: true }, ['80'], true, CHINA_ROOT)
+  add('200/c_2', { title: '多畫質影片', is_completed: true, page_data: { part: 'P2' } }, ['64'], true, CHINA_ROOT)
   fs.writeFileSync(path.join(dir, 'devices.txt'), 'List of devices attached\nFAKE-SERIAL-0001\tdevice product:x model:SM_S9260 device:y\n')
 }
 
@@ -205,14 +209,21 @@ for (let i = 0; i < 12 && !reached; i++) {
 }
 check(reached, 'Keyboard Tab reaches the 連線 button')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
-const connected = await app.waitFor("document.querySelectorAll('li.row').length === 4")
-check(connected, 'Connect by keyboard scans automatically and lists 4 rows', connected ? '' : String(await app.eval("document.querySelector('.notice')?.innerText ?? document.querySelector('.footer')?.innerText")))
+const connected = await app.waitFor("document.querySelectorAll('li.row').length === 5")
+check(connected, 'Connect by keyboard scans both apps automatically and lists 5 rows', connected ? '' : String(await app.eval("document.querySelector('.notice')?.innerText ?? document.querySelector('.footer')?.innerText")))
 const deviceCalls = calls(dir).filter(c => c[0] === 'devices').length
 check(deviceCalls === 1, 'Exactly one device listing for the connect action', String(deviceCalls))
 check(await app.eval("[...document.querySelectorAll('li.row input[type=checkbox]')].every(b => !b.checked)"), 'All rows start unselected')
-check(await app.eval("document.querySelectorAll('li.row img.thumb').length === 3"), 'Real covers shown for rows that have them')
+check(await app.eval("document.querySelectorAll('li.row img.thumb').length === 4"), 'Real covers shown for rows that have them')
 const rowsText = await app.eval("[...document.querySelectorAll('li.row')].map(r => r.innerText)")
 check(rowsText.some(t => t.includes('下載尚未完成')) && rowsText.some(t => t.includes('請先選擇畫質版本')), 'Incomplete and needs-quality rows show reasons')
+const singleRow = rowsText.find(t => t.includes('非常長'))
+check(singleRow.includes('320×180') && !singleRow.includes('80 · ') && !rowsText.some(t => /width=|bandwidth=/.test(t)), 'Rows show only the resolution, not raw index.json fields', singleRow)
+check(rowsText.filter(t => t.includes('多畫質影片')).length === 1, 'Video cached by both apps is one row')
+const qualities = await app.eval(`[...document.querySelector('select[aria-label^="畫質"]').options].filter(o => o.value !== '').map(o => o.text.split(' · ')[0]).sort()`)
+check(JSON.stringify(qualities) === JSON.stringify(['116', '64', '80']), 'Merged row offers the qualities of both apps', JSON.stringify(qualities))
+const mergedSource = await app.eval("[...document.querySelectorAll('li.row')].find(r => r.innerText.includes('多畫質影片')).querySelector('.inventory').textContent")
+check(mergedSource.includes('國際版（com.bilibili.app.in）') && mergedSource.includes('中國版（tv.danmaku.bili）'), 'Cache details of the merged row show both sources')
 check(await app.eval("document.documentElement.scrollWidth <= window.innerWidth"), 'Long title does not cause horizontal overflow')
 await app.shot('03-list-dark')
 
@@ -223,21 +234,23 @@ check(await app.eval(`document.querySelector('select[aria-label^="畫質"]').val
 // Quality choice + select all + export.
 await app.eval(`(() => { const s = document.querySelector('select[aria-label^="畫質"]'); const o = [...s.options].find(o => o.text.startsWith('116')); s.value = o.value; s.dispatchEvent(new Event('change')); })()`)
 await app.eval("document.querySelector('.toolbar input[type=checkbox]').click()")
-check(await app.eval("document.querySelectorAll('li.row input[type=checkbox]:checked').length === 3"), 'Select all covers only the 3 exportable rows')
+check(await app.eval("document.querySelectorAll('li.row input[type=checkbox]:checked').length === 4"), 'Select all covers only the 4 exportable rows')
 await app.click('匯出所選')
 check(await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('匯出')", 5000), 'Export shows real stages')
 await app.shot('04-exporting-dark')
 check(await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('匯出結束') || document.querySelector('.progress-box')?.innerText.includes('匯出完成')", 120000), 'Batch export finishes')
 await app.shot('05-export-result-dark')
 const files = outputs(dir)
-check(files.length === 3, 'Three MP4 files written', files.join(' | '))
+check(files.length === 4, 'Four MP4 files written', files.join(' | '))
 const long = files.find(f => f.startsWith('非常長'))
 const longStreams = probe(path.join(dir, 'out', long))
 check(longStreams.some(s => s.codec_name === 'h264' && !s.disposition.attached_pic) && longStreams.some(s => s.codec_name === 'aac') && longStreams.some(s => s.disposition.attached_pic === 1 && s.width === 640), 'Long Unicode title exported with H.264/AAC and embedded 640x360 cover', long)
 check(!long.includes('?') && !long.includes('*'), 'Illegal characters replaced in file name')
 const multi = files.find(f => f.startsWith('多畫質'))
 const pulls = calls(dir).filter(c => c[2] === 'pull').map(c => c[3])
-check(pulls.some(p => p.includes('200/c_2/116/video.m4s')) && !pulls.some(p => p.includes('200/c_2/80/video.m4s')) && !pulls.some(p => p.includes('300/c_3/80/')), 'Only selected quality and items transferred', multi)
+check(pulls.some(p => p.includes('200/c_2/116/video.m4s')) && !pulls.some(p => p.includes('200/c_2/80/video.m4s')) && !pulls.some(p => p.includes('200/c_2/64/')) && !pulls.some(p => p.includes('300/c_3/80/')), 'Only selected quality and items transferred', multi)
+const chinaOnly = files.find(f => f.startsWith('只在中國版'))
+check(chinaOnly && pulls.some(p => p.includes('tv.danmaku.bili/download/500/c_5/80/video.m4s')) && probe(path.join(dir, 'out', chinaOnly)).some(s => s.disposition.attached_pic === 1), 'China-only video exported from the China app cache with its cover', chinaOnly)
 check(calls(dir).filter(c => c[2] === 'shell').every(c => /^(pm list|find |stat -c|cat )/.test(c[3])), 'Phone only received read-only commands')
 const resultText = await app.text()
 check(resultText.includes('部分完成') && resultText.includes('手機快取中沒有封面圖片'), 'Missing cover reported as partial with reason')
@@ -253,12 +266,12 @@ await app.click('匯出所選')
 await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('傳輸')", 10000)
 await app.click('取消')
 check(await app.waitFor("document.body.innerText.includes('已取消')", 20000), 'Cancel stops the running export')
-check(outputs(dir).length === 3 && fs.readdirSync(path.join(dir, 'out', '.bili-temp')).length === 0, 'Cancel keeps earlier outputs and cleans its temp')
+check(outputs(dir).length === 4 && fs.readdirSync(path.join(dir, 'out', '.bili-temp')).length === 0, 'Cancel keeps earlier outputs and cleans its temp')
 await app.shot('06-cancelled-dark')
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/pull-delay-ms'), '0')
 check(await app.click('重試未完成項目'), 'Retry button offered for cancelled/partial items')
 check(await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('匯出結束') || document.querySelector('.progress-box')?.innerText.includes('匯出完成')", 120000), 'Retry finishes')
-check(outputs(dir).length >= 4 && outputs(dir).some(f => f.includes('(1)')), 'Retry adds numbered files and never overwrites', outputs(dir).join(' | '))
+check(outputs(dir).length >= 5 && outputs(dir).some(f => f.includes('(1)')), 'Retry adds numbered files and never overwrites', outputs(dir).join(' | '))
 
 // Theme, settings page, logs, narrow viewport.
 await app.eval("document.querySelector('button[aria-label=切換淺色模式]').click()")
@@ -302,7 +315,7 @@ check(calls(dir).length === before, 'Restart makes no ADB calls')
 check(await app.waitFor("document.body.innerText.includes('找到 1 個先前未完成作業')"), 'Startup offers cleanup of crash leftovers')
 await app.shot('12a-recover-prompt-light')
 await app.click('清理')
-check(await app.waitFor("document.body.innerText.includes('已清理 1 個殘留暫存')") && !fs.existsSync(path.join(dir, 'out', '.bili-temp', 'bili-export-0123456789abcdef0123456789abcdef')) && outputs(dir).length >= 4, 'Cleanup removes only the owned leftover and keeps outputs')
+check(await app.waitFor("document.body.innerText.includes('已清理 1 個殘留暫存')") && !fs.existsSync(path.join(dir, 'out', '.bili-temp', 'bili-export-0123456789abcdef0123456789abcdef')) && outputs(dir).length >= 5, 'Cleanup removes only the owned leftover and keeps outputs')
 // Keyboard: open settings and return.
 const tabTo = async label => {
   await app.eval('document.activeElement?.blur()')
@@ -325,7 +338,7 @@ check(saved.SettingsVersion === 2, 'Settings saved with the current version')
 
 // Unplug: export is refused before transfer; reconnect does not resume.
 await app.click('連線')
-await app.waitFor("document.querySelectorAll('li.row').length === 4")
+await app.waitFor("document.querySelectorAll('li.row').length === 5")
 await app.eval("document.querySelector('li.row input[type=checkbox]').click()")
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/devices.txt'), 'List of devices attached\n')
 const pullsBefore = calls(dir).filter(c => c[2] === 'pull').length
@@ -348,7 +361,7 @@ await app.close()
   check(movedOk, 'Moved folder: bundled-tool path still validates', movedOk ? '' : (await m.eval("document.querySelector('main').innerText")).slice(0, 500))
   await m.click('返回影片')
   await m.click('連線')
-  check(await m.waitFor("document.querySelectorAll('li.row').length === 4"), 'Moved folder: connect and scan work')
+  check(await m.waitFor("document.querySelectorAll('li.row').length === 5"), 'Moved folder: connect and scan work')
   await m.close()
 }
 
@@ -370,7 +383,7 @@ await app.close()
   check(JSON.parse(fs.readFileSync(path.join(manualDir, 'settings.json'), 'utf8')).Adb === path.join(own, 'adb.exe'), 'Manual path outside the folder stored as entered')
   await m.click('返回影片')
   await m.click('連線')
-  check(await m.waitFor("document.querySelectorAll('li.row').length === 4"), 'Manual tool works for connect and scan')
+  check(await m.waitFor("document.querySelectorAll('li.row').length === 5"), 'Manual tool works for connect and scan')
   await m.close()
 }
 

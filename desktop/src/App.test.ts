@@ -19,7 +19,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => null) }))
 
 import App from './App.vue'
 
-const variant = (q: string, issue = '') => ({ video: 'v', audio: 'a', videoSize: 1048576, audioSize: 1048576, quality: q, issue })
+const variant = (q: string, issue = '', label = q) => ({ video: 'v', audio: 'a', videoSize: 1048576, audioSize: 1048576, quality: q, label, issue })
 const item = (id: number, extra: Partial<CacheItem> = {}): CacheItem => ({
   id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], source: '國際版（com.bilibili.app.in）', ...extra,
 })
@@ -295,6 +295,40 @@ describe('compact list', () => {
     await flushPromises()
     expect((w.get('li.row select').element as HTMLSelectElement).value).toBe('0')
     expect(w.get('li.row input[type=checkbox]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('rows and the quality menu show the short label; cache details keep the raw metadata', async () => {
+    const raw = '80（快取目錄） · bandwidth=102599, height=0, width=0, height=1080, width=1920'
+    handlers.connect = () => ({ ...connected, items: [
+      item(0, { variants: [variant(raw, '', '1920×1080')], quality: '1920×1080', inventory: [{ path: '80/index.json', size: 1, error: '' }] }),
+      item(1, { variants: [variant(raw, '', '1920×1080'), variant('64（快取目錄）', '', '解析度未知')], autoVariant: null, needsChoice: true, quality: '2 個版本（需選擇畫質）' }),
+    ] })
+    const w = await start()
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    const [single, multi] = w.findAll('li.row')
+    expect(single.get('.meta').text()).toContain('1920×1080')
+    expect(single.get('.meta').text()).not.toContain('80 ·')
+    expect(single.get('.meta').text()).not.toContain('bandwidth=')
+    expect(single.get('details').text()).toContain('bandwidth=102599')
+    const options = multi.findAll('option').slice(1).map(o => o.text())
+    expect(options[0]).toContain('80 · 1920×1080')
+    expect(options[1]).toContain('64 · 解析度未知')
+    expect(options.join()).not.toContain('bandwidth=')
+  })
+
+  it('the update prompt waits while the tool download dialog is open', async () => {
+    handlers.check_update = () => ({ version: '2.1.0', notes: '', newer: true })
+    handlers.connect = () => { throw { message: '缺少必要工具：ADB', cancelled: false, missing: ['adb'] } }
+    const w = await start()
+    expect(w.get('[role=dialog]').text()).toContain('有新版本 2.1.0')
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    expect(w.findAll('[role=dialog]')).toHaveLength(1)
+    expect(w.get('[role=dialog]').text()).toContain('37.0.1')
+    await w.get('.app').trigger('keydown', { key: 'Escape' })
+    expect(w.findAll('[role=dialog]')).toHaveLength(1)
+    expect(w.get('[role=dialog]').text()).toContain('有新版本 2.1.0')
   })
 
   it('a late, older tool check does not overwrite a newer result', async () => {

@@ -3,7 +3,7 @@ use crate::log::Logger;
 use crate::runner::Runner;
 use crate::scan::{Adb, CacheItem, Device};
 use crate::settings::{self, Settings};
-use crate::storage::{Storage, TemporaryJob};
+use crate::storage::Storage;
 use crate::tools::{self, check_tool, DownloadProgress, Fetch, Kind, Package, PACKAGES};
 use crate::update::{self, Release};
 use crate::{Cancel, Error};
@@ -428,10 +428,6 @@ impl App {
             summary.successful, summary.partial, summary.failed, summary.cancelled, summary.not_started
         ));
         Ok(summary)
-    }
-
-    pub fn recoverable_jobs(&self) -> Vec<TemporaryJob> {
-        self.storage.as_ref().map(|s| s.find_recoverable()).unwrap_or_default()
     }
 
     /// Cleans only jobs with a free lock and a valid ownership record; returns (cleaned, kept).

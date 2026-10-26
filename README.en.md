@@ -28,6 +28,7 @@ The app's interface is in Traditional Chinese; the button names below give the C
 
 - `settings.json`: settings.
 - `log\`: one log file per run, never uploaded automatically; device serials, URL parameters and personal paths are masked, but video titles may still appear.
+- Network: by default each start asks GitHub whether a newer version exists (no logs or phone data are sent); turn off Check for updates at startup (「啟動時檢查更新」) under Settings (「設定」) → Update (「更新」). Tools are downloaded only when you press Download.
 - `tools\`: ADB (Google platform-tools r37.0.1) and FFmpeg/FFprobe (gyan.dev essentials 9.0.1, GPLv3), downloaded only when you ask. Tool locations are stored as relative paths, so they are still found after moving the whole folder.
 - `.bili-jobs\`: ownership records for temporary export files; after an abnormal exit, the next start offers to clean leftovers that provably belong to this program.
 - The phone's cache is only ever read. Only the separate M4S cache of the international app `com.bilibili.app.in` and the China app `tv.danmaku.bili` is handled (a video cached by both apps is one row whose qualities are chosen together; Cache details (「快取詳情」) shows the source); no login, no root, and no attempt to decrypt or patch DRM.
