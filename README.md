@@ -1,5 +1,7 @@
 # Bili 快取匯出（Android 國際版 App → Windows）
 
+繁體中文 | [English](README.en.md)
+
 接上 Android 手機 → 按「連線」→ 勾選影片與畫質 → 匯出附原始封面的 MP4。
 
 ## 開始使用
