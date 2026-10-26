@@ -78,13 +78,31 @@ pub fn old_path(exe: &Path) -> PathBuf {
     exe.with_file_name(name)
 }
 
-/// Removes executables left behind by a previous update; one still in use is retried next start.
-pub fn clean_old(dir: &Path) {
+/// Removes executables left behind by a previous update; returns false while one is still in use.
+fn remove_old(dir: &Path) -> bool {
+    let mut done = true;
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         if entry.file_name().to_string_lossy().to_lowercase().ends_with(".exe.old") {
-            let _ = std::fs::remove_file(entry.path());
+            done &= std::fs::remove_file(entry.path()).is_ok();
         }
     }
+    done
+}
+
+/// Right after an update the previous process may still be exiting, so a locked file is retried for a while.
+pub fn clean_old(dir: &Path) {
+    if remove_old(dir) {
+        return;
+    }
+    let dir = dir.to_path_buf();
+    std::thread::spawn(move || {
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if remove_old(&dir) {
+                break;
+            }
+        }
+    });
 }
 
 /// Downloads `version`, verifies it against the release's SHA256.txt and swaps it in for `exe`.
