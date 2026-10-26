@@ -8,11 +8,11 @@
 
 ### Issue tracker
 
-規格與議題使用本機 Markdown。建立、讀取或更新前，先讀取 docs/agents/issue-tracker.md。
+規格與議題使用 GitHub Issues。建立、讀取或更新前，先讀取 docs/agents/issue-tracker.md。
 
 ### Triage labels
 
-使用五種預設狀態。分類或變更狀態前，先讀取 docs/agents/triage-labels.md。
+使用五種預設標籤。分類或變更標籤前，先讀取 docs/agents/triage-labels.md。
 
 ### Domain docs
 
