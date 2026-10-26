@@ -21,7 +21,7 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布；可在 01 完成後先推進，不必等待掃描或匯出。
-- 2026-10-26：完成並驗證（提交 64285be）。
+- 2026-10-26：完成並驗證（提交 dfb7e17）。
   - 選定來源（2026-10-26 下載並核對發行者校驗值）：
     - ADB：Android SDK Platform-Tools r37.0.1（Google，`https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip`），8,044,989 bytes，SHA-256 `45f4d631…1a99`（Google repository2-3.xml 的 SHA-1 `e03e78b1…1110` 相符）。啟用 adb.exe、AdbWinApi.dll、AdbWinUsbApi.dll、libwinpthread-1.dll、NOTICE.txt、source.properties。Android SDK License；由使用者自 Google 下載，不隨包再散布。
     - FFmpeg／FFprobe：gyan.dev essentials 9.0.1（GitHub GyanD/codexffmpeg 標籤 9.0.1），111,253,802 bytes，SHA-256 `fec81ae0…a2e9`（與 GitHub 發行資產 digest 相符）。啟用 ffmpeg.exe、ffprobe.exe、LICENSE（GPLv3）。x64，固定版本，不追最新。

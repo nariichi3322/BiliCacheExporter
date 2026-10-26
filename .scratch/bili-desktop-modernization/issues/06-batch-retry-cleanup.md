@@ -21,6 +21,6 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布；04 已提供部分完成結果，可先驗證批次與重試，實際封面成功路徑由 05 加入。
-- 2026-10-26：完成並驗證（提交 64285be）。
+- 2026-10-26：完成並驗證（提交 dfb7e17）。
   - Rust 流程測試：`disconnect_before_and_during_export`（單項失敗後續跑，摘要區分成功／失敗）、`cancel_stops_queue_keeps_finished_and_retry_works`（取消停止目前與後續、第三部標為未開始、已完成影片保留、暫存清空、手動重試重新傳輸兩部）、`partial_retry_adds_numbered_file_without_overwriting`、`crash_leftovers_are_recovered_only_with_ownership_proof`（只清理鎖已釋放且歸屬標記正確的殘留；標記不符者保留；執行中作業不碰；使用者檔案不動）、`overlapping_operations_are_refused`、`cancel_during_cover_stage_leaves_no_output`。
   - Vitest／正式 EXE 端到端：結果摘要分辨完成、部分完成、失敗、取消／未開始；取消後出現「重試未完成項目」，重試完成並產生編號檔名；結果在列中與收合記錄可查；深淺色皆截圖。正式 EXE 端到端另驗證重啟時提示「找到 1 個先前未完成作業」，按清理只移除有歸屬證據的殘留並保留輸出。

@@ -22,6 +22,6 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布；進階畫質及完整無效快取盤點由 03 接續。
-- 2026-10-26：完成並驗證（提交 64285be）。全程使用假手機，未接真手機。
+- 2026-10-26：完成並驗證（提交 dfb7e17）。全程使用假手機，未接真手機。
   - Rust 流程測試：`device_problems_have_distinct_messages`（無裝置／未授權／offline／ADB 逾時／ADB 無法啟動，修正後可再連線）、`multiple_devices_need_an_explicit_choice`（多裝置不讀任何手機，選定後所有命令綁定該序號）、`scan_is_read_only_shows_real_metadata_and_isolates_bad_rows`（Unicode 標題＋分 P、真實封面、動態品質目錄、壞 entry.json 只影響該列、越界路徑不保留為來源、掃描只拉 cover.jpg、手機只收到 pm list／find／stat／cat、日誌不含序號）、`empty_cache_and_missing_app`、`rescan_rechecks_device_and_switching_invalidates_list`、`disconnect_during_scan_leaves_nothing_exportable`、`overlapping_operations_are_refused`、`startup_and_idle_never_query_devices`。
   - 正式 EXE 端到端：鍵盤 Tab 到「連線」按 Enter 後自動掃描列出 4 列、該動作只列舉裝置 1 次、全部初始未勾選、有封面者顯示真實封面、未完成與待選畫質顯示原因；不顯示虛構作者／時長；掃描期間只顯示階段文字與已找到數量，不造百分比。

@@ -20,7 +20,7 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布。
-- 2026-10-26：完成並驗證（提交 64285be；`cancel_during_cover_stage_leaves_no_output` 於後續提交加入並通過）。
+- 2026-10-26：完成並驗證（提交 dfb7e17；`cancel_during_cover_stage_leaves_no_output` 於後續提交加入並通過）。
   - Rust 流程測試：`export_embeds_original_cover_and_verifies`（封面以 attached_pic 嵌入、寬高與 codec 相符，從 MP4 抽出的 JPEG 與手機原圖逐位元組相同，輸出資料夾不留封面圖片）、`cover_problems_keep_valid_video_as_partial`（缺封面與非圖片封面：保留通過完整解碼的 MP4，標示部分完成及原因）、`bad_media_never_reported_as_success`（只有封面＋音訊不能當正片）、`cancel_during_cover_stage_leaves_no_output`、`partial_retry_adds_numbered_file_without_overwriting`。
   - 正式 EXE 端到端：640×360 原始封面嵌入、抽出位元組相同；無封面影片顯示「部分完成 · 手機快取中沒有封面圖片」。
   - 播放器與檔案總管縮圖屬 09 人工驗收，本票未宣稱。

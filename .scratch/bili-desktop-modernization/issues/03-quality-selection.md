@@ -21,7 +21,7 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布；可與以單畫質有效來源為前提的 04 分別推進。
-- 2026-10-26：完成並驗證（提交 64285be）。
+- 2026-10-26：完成並驗證（提交 dfb7e17）。
   - Rust 流程測試：`multi_quality_requires_explicit_valid_choice`（同一分 P 兩個品質候選一列；損壞 index.json 只降級標示且仍可匯出；只有一個完整版本時沿用舊版規則自動指定；未選、選到不可用或不存在的版本都在傳輸前被後端拒絕；選定 116 時只拉該目錄影音）、`incomplete_missing_empty_and_unknown_items_stay_visible_with_reasons`（未完成、缺檔、空檔、未知結構可見且附唯讀盤點，皆不可匯出）。可選中繼資料讀取遇到取消時向上傳遞（`scan.rs` 對 Cancelled 直接返回）。
   - Vitest：多畫質未選前勾選框停用、選定後才可勾選；全選只涵蓋可匯出項目；無有效選取時匯出停用；匯出送出的是選定的 variant。
   - 正式 EXE 端到端：選定 116 後全選只勾 3 個可匯出列；深／淺色截圖可讀；正式畫面無原型情境切換列。正式 EXE 端到端另驗證以方向鍵在原生選單選定畫質（Quality can be chosen with the keyboard）。

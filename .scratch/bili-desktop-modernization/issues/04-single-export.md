@@ -22,8 +22,8 @@ Resolution: resolved
 ## Comments
 
 - 2026-10-26：依使用者確認發布；不依賴 03，先以 02 的單畫質有效項目驗證完整路徑。
-- 2026-10-26：完成並驗證（提交 64285be；`temp_on_another_volume` 與 `cancel_during_cover_stage_leaves_no_output` 於後續提交加入，以 BILI_TEST_OTHER_VOLUME=D: 實跑通過）。ADB 為假手機，FFmpeg／FFprobe 為真實 9.0.1。
+- 2026-10-26：完成並驗證（提交 dfb7e17；`temp_on_another_volume` 與 `cancel_during_cover_stage_leaves_no_output` 於後續提交加入，以 BILI_TEST_OTHER_VOLUME=D: 實跑通過）。ADB 為假手機，FFmpeg／FFprobe 為真實 9.0.1。
   - Rust 流程測試：`export_embeds_original_cover_and_verifies`（只拉選中項目的選定影音、真實 FFprobe 確認 H.264／AAC 正片、各階段通知、重複匯出得到「(1)」且原檔位元組不變、無殘留暫存）、`bad_media_never_reported_as_success`（封面冒充正片、全零檔、可探測但封包損壞——皆失敗且不留 MP4）、`changed_source_space_and_unwritable_output_fail_safely`（來源大小變動、空間不足於傳輸前拒絕、輸出路徑不可寫、自訂暫存資料夾）、`temp_on_another_volume`（暫存在 D:、輸出在 C:）、`reserved_and_long_names_are_safe`、`disconnect_before_and_during_export`（拔除後不傳輸並要求重新連線、重新連線不自動續跑、傳輸中斷線標示失敗並繼續下一部）、`cancel_stops_queue_keeps_finished_and_retry_works`、`cancel_during_real_ffmpeg_stops_process`（取消真實 FFmpeg 子程序；本機逾時不歸咎手機）、`overlapping_operations_are_refused`。
   - 最後落檔用 `MoveFileExW` 不帶取代旗標，確保即使競態也不覆寫既有檔案。
   - 正式 EXE 端到端：匯出期間顯示實際階段與整體進度（以項目數計），無法量測時為不定進度條；取消後保留先前輸出並清空本次暫存。
-- 2026-10-26：08 打包驗證時發現並修正回歸（提交 22e76fd）：輸出資料夾較深且標題很長時，最終路徑超過 260 字元，直接呼叫的 `MoveFileExW` 未使用長路徑形式而失敗（Rust 標準檔案 API 本身會處理）。改為傳入 `\\?\` 長路徑形式，仍不帶取代旗標；`reserved_and_long_names_are_safe` 新增超過 260 字元目標的案例，並確認舊程式碼會失敗（「系統找不到指定的路徑」）、修正後通過。
+- 2026-10-26：08 打包驗證時發現並修正回歸（提交 5d3e151）：輸出資料夾較深且標題很長時，最終路徑超過 260 字元，直接呼叫的 `MoveFileExW` 未使用長路徑形式而失敗（Rust 標準檔案 API 本身會處理）。改為傳入 `\\?\` 長路徑形式，仍不帶取代旗標；`reserved_and_long_names_are_safe` 新增超過 260 字元目標的案例，並確認舊程式碼會失敗（「系統找不到指定的路徑」）、修正後通過。
