@@ -58,7 +58,6 @@ function makeFolder(name, { tools }) {
     makePhone(path.join(adbDir, 'fake-phone'))
     settings.Adb = 'tools\\adb\\adb.exe'
   }
-  // v1-style file (no SettingsVersion) exercises the upgrade path in the packaged app.
   fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings))
   return dir
 }
@@ -305,7 +304,7 @@ await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
 check(await app.waitFor("document.querySelector('.device') !== null && !document.body.innerText.includes('必要工具與位置')"), 'Returns to the list by keyboard')
 check(await app.eval("document.documentElement.dataset.theme") === 'light', 'Theme persists across restart')
 const saved = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
-check(saved.SettingsVersion === 2 && fs.existsSync(path.join(dir, 'settings.v1-backup.json')), 'v1 settings upgraded with original backup')
+check(saved.SettingsVersion === 2, 'Settings saved with the current version')
 
 // Unplug: export is refused before transfer; reconnect does not resume.
 await app.click('連線')

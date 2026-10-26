@@ -32,7 +32,8 @@ pub const PACKAGES: &[Package] = &[
         url: "https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip",
         sha256: "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99",
         size: 8_044_989,
-        license: "Android SDK License；由使用者自 Google 下載，本程式不再散布。",
+        license:
+            "各元件依隨附 NOTICE.txt 的授權條款（含 ADB、DLL 與 libwinpthread）；SDK 其他部分適用 Android SDK License。由使用者自 Google 下載，本程式不再散布。",
         files: &[
             ("platform-tools/adb.exe", "adb.exe"),
             ("platform-tools/AdbWinApi.dll", "AdbWinApi.dll"),

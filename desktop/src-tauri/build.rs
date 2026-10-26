@@ -1,5 +1,5 @@
 fn main() {
-    // Source identity for --version and the window title, like the C# build's InformationalVersion.
+    // Source identity for --version and the window title.
     let commit = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()

@@ -4,10 +4,9 @@ use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
 pub const FILE: &str = "settings.json";
-const BACKUP: &str = "settings.v1-backup.json";
 const VERSION: u32 = 2;
 
-/// Same file name and PascalCase keys as the C# version, so its values load unchanged; unknown keys survive saves.
+/// PascalCase keys; unknown keys survive saves.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct Settings {
@@ -62,12 +61,6 @@ pub fn load(dir: &Path) -> Res<Settings> {
         Ok(_) => return fail(corrupt(&path, "內容不是設定物件")),
         Err(e) => return fail(corrupt(&path, &e.to_string())),
     };
-    if settings.ffprobe.is_empty() && !settings.ffmpeg.is_empty() {
-        // v1 required ffprobe.exe beside ffmpeg.exe.
-        if let Some(parent) = Path::new(&settings.ffmpeg).parent() {
-            settings.ffprobe = parent.join("ffprobe.exe").to_string_lossy().into_owned();
-        }
-    }
     if settings.theme != "light" {
         settings.theme = dark();
     }
@@ -78,17 +71,10 @@ fn corrupt(path: &Path, detail: &str) -> String {
     format!("設定檔損壞，無法讀取：{}（{detail}）。原檔保持未修改；可修正檔案，或在設定頁按「備份並重設」。", path.display())
 }
 
-/// Writes atomically; the first upgrade of a v1 file keeps a copy of the original.
+/// Writes atomically.
 pub fn save(dir: &Path, settings: &Settings) -> Res<()> {
     let path = dir.join(FILE);
     let unwritable = |e: std::io::Error| crate::Error::Failed(format!("設定無法儲存到 {}：{e}。請將整個程式資料夾移到可寫的位置。", dir.display()));
-    if let Ok(existing) = std::fs::read_to_string(&path) {
-        let is_v1 = serde_json::from_str::<Value>(existing.trim_start_matches('\u{feff}')).ok().and_then(|v| v.get("SettingsVersion").cloned()).is_none();
-        let backup = dir.join(BACKUP);
-        if is_v1 && !backup.exists() {
-            std::fs::copy(&path, &backup).map_err(unwritable)?;
-        }
-    }
     let mut settings = settings.clone();
     settings.settings_version = VERSION;
     let temporary = dir.join(format!("{FILE}.tmp"));

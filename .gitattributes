@@ -1,1 +1,3 @@
 .githooks/* text eol=lf
+# Upstream license texts are kept verbatim.
+desktop/licenses/upstream/** -whitespace

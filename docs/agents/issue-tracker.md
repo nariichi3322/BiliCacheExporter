@@ -33,8 +33,3 @@
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.**
-
-## 既有本機資料
-
-.scratch/ 中的既有資料保留。本次設定不搬移、不刪除；
-明確指定本機檔案時仍可讀取，新議題使用 GitHub Issues。

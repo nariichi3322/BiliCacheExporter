@@ -16,6 +16,7 @@ try {
         cargo test --quiet; if ($LASTEXITCODE) { throw 'Rust tests failed' }
     }
     finally { Pop-Location }
+    node --test e2e/licenses-check.mjs; if ($LASTEXITCODE) { throw 'License notice tests failed' }
     Write-Output 'Desktop checks passed.'
 }
 finally { Pop-Location }

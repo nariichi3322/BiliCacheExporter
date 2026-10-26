@@ -111,7 +111,7 @@ fn patterns() -> &'static Patterns {
     })
 }
 
-/// Same rules as the C# DiagnosticLog: drop metadata JSON, URL queries, device serials and the user profile path.
+/// Drops metadata JSON, URL queries, device serials and the user profile path.
 pub fn redact(text: &str) -> String {
     let trimmed = text.trim_start();
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
