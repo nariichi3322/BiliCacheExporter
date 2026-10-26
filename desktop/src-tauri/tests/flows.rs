@@ -211,7 +211,7 @@ fn scan_is_read_only_shows_real_metadata_and_isolates_bad_rows() {
     assert_eq!(item.title, "中文標題：測試 🎬 — 第一集");
     assert!(item.cover.as_ref().unwrap().starts_with("data:image/jpeg;base64,"));
     assert_eq!(item.auto_variant, Some(0), "single complete quality is the source");
-    assert_eq!(item.quality, "80 · 160×90", "row shows the short label");
+    assert_eq!(item.quality, "160×90", "row shows the short label");
     assert!(item.variants[0].quality.contains("80（快取目錄）") && item.variants[0].quality.contains("width=160"), "details keep raw metadata");
     let broken = r.items.iter().find(|i| i.remote == bad).unwrap();
     assert!(broken.issue.contains("entry.json 無法解析"));
@@ -375,7 +375,7 @@ fn multi_quality_requires_explicit_valid_choice() {
     assert!(multi.needs_choice && multi.auto_variant.is_none() && multi.variants.len() == 2, "one row, two candidates");
     let q116 = multi.variants.iter().position(|v| v.quality.starts_with("116")).unwrap();
     assert!(multi.variants[q116].quality.contains("畫質資料無法讀取") && multi.variants[q116].issue.is_empty(), "bad optional metadata does not block media");
-    assert_eq!(multi.variants[q116].label, "116 · 畫質資料無法讀取", "readable fallback label");
+    assert_eq!(multi.variants[q116].label, "畫質資料無法讀取", "readable fallback label");
     let single = r.items.iter().find(|i| i.remote == one).unwrap();
     let broken = single.variants.iter().position(|v| v.quality.starts_with("64")).unwrap();
     assert_eq!(single.auto_variant, Some(1 - broken));

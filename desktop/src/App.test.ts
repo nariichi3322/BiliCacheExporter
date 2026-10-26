@@ -300,14 +300,15 @@ describe('compact list', () => {
   it('rows and the quality menu show the short label; cache details keep the raw metadata', async () => {
     const raw = '80（快取目錄） · bandwidth=102599, height=0, width=0, height=1080, width=1920'
     handlers.connect = () => ({ ...connected, items: [
-      item(0, { variants: [variant(raw, '', '80 · 1920×1080')], quality: '80 · 1920×1080', inventory: [{ path: '80/index.json', size: 1, error: '' }] }),
-      item(1, { variants: [variant(raw, '', '80 · 1920×1080'), variant('64（快取目錄）', '', '64 · 解析度未知')], autoVariant: null, needsChoice: true, quality: '2 個版本（需選擇畫質）' }),
+      item(0, { variants: [variant(raw, '', '1920×1080')], quality: '1920×1080', inventory: [{ path: '80/index.json', size: 1, error: '' }] }),
+      item(1, { variants: [variant(raw, '', '1920×1080'), variant('64（快取目錄）', '', '解析度未知')], autoVariant: null, needsChoice: true, quality: '2 個版本（需選擇畫質）' }),
     ] })
     const w = await start()
     await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
     await flushPromises()
     const [single, multi] = w.findAll('li.row')
-    expect(single.get('.meta').text()).toContain('80 · 1920×1080')
+    expect(single.get('.meta').text()).toContain('1920×1080')
+    expect(single.get('.meta').text()).not.toContain('80 ·')
     expect(single.get('.meta').text()).not.toContain('bandwidth=')
     expect(single.get('details').text()).toContain('bandwidth=102599')
     const options = multi.findAll('option').slice(1).map(o => o.text())

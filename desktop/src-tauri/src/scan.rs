@@ -25,7 +25,7 @@ pub struct Variant {
     pub audio_size: u64,
     /// Full metadata for 快取詳情, e.g. "80（快取目錄） · bandwidth=…, width=1920".
     pub quality: String,
-    /// Short form for the row and the quality menu, e.g. "80 · 1920×1080".
+    /// Short form for the row, e.g. "1920×1080"; the quality menu prefixes the cache directory name.
     pub label: String,
     pub issue: String,
 }
@@ -241,9 +241,7 @@ impl Adb<'_> {
         for dir in quality_dirs {
             let name = &dir[dir.rfind('/').unwrap() + 1..];
             let mut variant =
-                Variant {
-                    issue: item.issue.clone(), quality: format!("{name}（快取目錄）"), label: format!("{name} · 解析度未知"), ..Default::default()
-                };
+                Variant { issue: item.issue.clone(), quality: format!("{name}（快取目錄）"), label: "解析度未知".into(), ..Default::default() };
             let result: Res<()> = (|| {
                 variant.video = if has(&format!("{dir}/video.m4s")) { format!("{dir}/video.m4s") } else { String::new() };
                 variant.audio = if has(&format!("{dir}/audio.m4s")) { format!("{dir}/audio.m4s") } else { String::new() };
@@ -262,14 +260,14 @@ impl Adb<'_> {
                         Ok((q, r)) => {
                             variant.quality += &format!(" · {q}");
                             if let Some(r) = r {
-                                variant.label = format!("{name} · {r}");
+                                variant.label = r;
                             }
                         }
                         Err(Error::Cancelled) => return Err(Error::Cancelled),
                         Err(e) => {
                             self.runner.log(&format!("index.json 讀取／解析失敗：{e}"));
                             variant.quality += " · 畫質資料無法讀取／解析";
-                            variant.label = format!("{name} · 畫質資料無法讀取");
+                            variant.label = "畫質資料無法讀取".into();
                         }
                     }
                 }
