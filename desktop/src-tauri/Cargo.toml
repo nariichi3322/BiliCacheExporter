@@ -1,6 +1,6 @@
 [package]
 name = "bili-cache-exporter"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 publish = false
 
@@ -26,7 +26,7 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 ureq = "3"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
 
 [profile.release]
 codegen-units = 1

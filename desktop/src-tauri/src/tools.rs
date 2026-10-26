@@ -242,3 +242,68 @@ pub fn executables(name: &str) -> &'static [(Kind, &'static str)] {
         _ => &[(Kind::Ffmpeg, "ffmpeg.exe"), (Kind::Ffprobe, "ffprobe.exe")],
     }
 }
+
+/// On exit, stops the ADB server only when it is the app's own `tools\adb\adb.exe`:
+/// port 5037 is shared, so a server from Android Studio or the user's own adb is left alone.
+pub fn stop_own_adb(dir: &Path, runner: &Runner) {
+    let exe = dir.join("tools").join("adb").join("adb.exe");
+    if process_running(&exe) {
+        let _ = runner.run(&exe.to_string_lossy(), &strings(&["kill-server"]), &Cancel::default(), &mut |_| {}, 10);
+    }
+}
+
+/// True when some running process was started from exactly this executable file.
+pub fn process_running(exe: &Path) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+    let (Ok(target), Some(name)) = (std::fs::canonicalize(exe), exe.file_name()) else {
+        return false;
+    };
+    let name = name.to_string_lossy().to_lowercase();
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return false;
+    }
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut found = false;
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+    while more && !found {
+        let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+        if String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase() == name {
+            let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, entry.th32ProcessID) };
+            if !process.is_null() {
+                let mut buffer = [0u16; 32768];
+                let mut size = buffer.len() as u32;
+                if unsafe { QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut size) } != 0 {
+                    let path = PathBuf::from(String::from_utf16_lossy(&buffer[..size as usize]));
+                    found = std::fs::canonicalize(path).is_ok_and(|p| p == target);
+                }
+                unsafe { CloseHandle(process) };
+            }
+        }
+        more = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_running_matches_the_exact_executable_only() {
+        let me = std::env::current_exe().unwrap();
+        assert!(process_running(&me));
+        // Same file name in another folder (like another adb.exe) must not match.
+        let copy = std::env::temp_dir().join(format!("bili-process-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&copy).unwrap();
+        let other = copy.join(me.file_name().unwrap());
+        std::fs::copy(&me, &other).unwrap();
+        assert!(!process_running(&other));
+        assert!(!process_running(&copy.join("tools").join("adb").join("adb.exe")));
+        std::fs::remove_dir_all(&copy).unwrap();
+    }
+}

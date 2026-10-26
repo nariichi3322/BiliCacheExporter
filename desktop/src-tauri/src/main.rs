@@ -173,10 +173,18 @@ fn main() {
             download_tools,
             open_folder
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
     // A runtime that exists but cannot start (damaged install, policy) gets the same guidance instead of a silent crash.
-    if let Err(e) = result {
-        webview2_guidance("介面無法啟動", "介面無法啟動，WebView2 Runtime 可能損壞或被系統原則封鎖。請重新安裝 WebView2 Runtime 後再試。", &e.to_string());
-        std::process::exit(1);
+    match result {
+        Ok(app) => app.run(|handle, event| {
+            // The adb server outlives its client and would keep the portable folder in use.
+            if let tauri::RunEvent::Exit = event {
+                handle.state::<Shared>().app.stop_own_adb();
+            }
+        }),
+        Err(e) => {
+            webview2_guidance("介面無法啟動", "介面無法啟動，WebView2 Runtime 可能損壞或被系統原則封鎖。請重新安裝 WebView2 Runtime 後再試。", &e.to_string());
+            std::process::exit(1);
+        }
     }
 }
