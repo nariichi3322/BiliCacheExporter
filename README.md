@@ -1,8 +1,10 @@
-# Bili 快取匯出（Android 國際版／中國版 App → Windows）
+# Bili 快取匯出（Android App → Windows）
 
 繁體中文 | [English](README.en.md)
 
 接上 Android 手機 → 按「連線」→ 勾選影片與畫質 → 匯出附原始封面的 MP4。
+
+支援 Bilibili 國際版（`com.bilibili.app.in`）與中國版（`tv.danmaku.bili`）App 的快取。
 
 ## 開始使用
 

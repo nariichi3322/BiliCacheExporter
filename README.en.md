@@ -1,8 +1,10 @@
-# Bili Cache Exporter (Android international / China app → Windows)
+# Bili Cache Exporter (Android app → Windows)
 
 [繁體中文](README.md) | English
 
 Connect your Android phone → press Connect → pick videos and quality → export MP4 files with their original covers.
+
+Supports the cache of both the international (`com.bilibili.app.in`) and China (`tv.danmaku.bili`) Bilibili apps.
 
 The app's interface is in Traditional Chinese; the button names below give the Chinese label in brackets.
 
