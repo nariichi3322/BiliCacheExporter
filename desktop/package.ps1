@@ -84,13 +84,22 @@ try {
     if ($wvTitle -ne '需要安裝 WebView2' -or $wvChildren -ne 0 -or $wvWrote.Count -ne 0 -or $wvExit -ne 2) { throw "WebView2 guidance check failed: '$wvTitle' children=$wvChildren wrote=$wvWrote exit=$wvExit" }
     Remove-Item -LiteralPath $wvDir -Recurse -Force
 
+    # Fake update release for the e2e, packed by the same Complete-Package as real releases so the updater's asset
+    # names and zip layout are checked against it. Its EXE is this build plus marker bytes (still runnable).
+    $updateRelease = Join-Path $run 'update-release'
+    $updatePackage = Join-Path $updateRelease 'BiliCacheExporter-win-x64'
+    New-Item -ItemType Directory -Path $updatePackage | Out-Null
+    $marked = [IO.File]::ReadAllBytes((Join-Path $package 'BiliCacheExporter.exe')) + [Text.Encoding]::ASCII.GetBytes("`nBILI-E2E-UPDATE-MARKER`n")
+    [IO.File]::WriteAllBytes((Join-Path $updatePackage 'BiliCacheExporter.exe'), $marked)
+    $null = Complete-Package $updatePackage $commit $dirty $version
+
     # Integrated flows on the packaged EXE: fake phone + real FFmpeg/FFprobe.
     $e2e = Join-Path $run 'e2e'
-    $e2eArgs = @((Join-Path $desktop 'e2e\package-e2e.mjs'), (Join-Path $package 'BiliCacheExporter.exe'), $fakeAdb, $FFmpeg, $e2e)
+    $e2eArgs = @((Join-Path $desktop 'e2e\package-e2e.mjs'), (Join-Path $package 'BiliCacheExporter.exe'), $fakeAdb, $FFmpeg, $e2e, '--update-release', $updateRelease)
     if ($WithDownload) { $e2eArgs += '--with-download' }
     Invoke-Checked 'node' $e2eArgs
     Copy-Item -Path (Join-Path $e2e 'evidence\*') -Destination $evidence
-    Remove-Item -LiteralPath $e2e -Recurse -Force
+    Remove-Item -LiteralPath $e2e, $updateRelease -Recurse -Force
     $e2eResults = Get-Content -LiteralPath (Join-Path $evidence 'e2e-results.json') -Raw | ConvertFrom-Json
 
     $exe = Get-Item -LiteralPath (Join-Path $package 'BiliCacheExporter.exe')
@@ -109,7 +118,7 @@ try {
         "- 閒置 8 秒、未連線：應用程序 Working Set $(& $mib $appWs) MiB；含 WebView2 子程序共 $($procs.Count) 個程序，Working Set 合計 $(& $mib $treeWs) MiB、Private 合計 $(& $mib $treePrivate) MiB。WebView2 子程序共享系統元件，合計值會重複計算共享頁面。",
         "- WebView2 缺少（以空的 WEBVIEW2_BROWSER_EXECUTABLE_FOLDER 模擬）：顯示原生「需要安裝 WebView2」對話框，未啟動 WebView 子程序；按「否」以代碼 2 結束且未寫入任何檔案（「是」只開啟 Microsoft 官方頁，未自動化點擊）。不是乾淨虛擬機上的實測。",
         "- 正式包整合流程：$(@($e2eResults.results | Where-Object ok).Count)/$(@($e2eResults.results).Count) PASS（假手機＋真實 FFmpeg/FFprobe，DPR $($e2eResults.devicePixelRatio)）。截圖在 evidence/。",
-        '- 程式內更新：本機假 GitHub（BILI_UPDATE_SOURCE 指向 127.0.0.1）提供 99.0.0，內容是本次 EXE 加上標記位元組；驗證提示、下載、SHA-256、替換、重新啟動、.old 清理與 settings.json／tools 不變（含在上一行的整合流程結果）。新舊 EXE 版本號相同，未驗證跨版本號的實際升級。',
+        '- 程式內更新：本機假 GitHub（BILI_UPDATE_SOURCE 指向 127.0.0.1）提供 99.0.0，由與正式發版相同的 Complete-Package 打包，內容是本次 EXE 加上標記位元組；驗證提示、下載、SHA-256、替換、重新啟動、.old 清理與 settings.json／tools 不變（含在上一行的整合流程結果）。新舊 EXE 版本號相同，未驗證跨版本號的實際升級。',
         $(if ($WithDownload) { '- 本次包含正式包內的真實 ADB 下載、SHA-256 核對與啟用。' } else { '- 本次未在正式包內執行真實下載（加 -WithDownload 才會）。' }),
         '- 未驗證：真手機、實際播放、封面外觀與檔案總管縮圖（工作票 09，由使用者確認）。'
     )

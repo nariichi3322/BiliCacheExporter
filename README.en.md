@@ -45,6 +45,8 @@ npx tauri dev                                   # development mode
 
 `package.ps1` checks that the package holds a single EXE, measures startup and idle memory, simulates missing WebView2, and drives the release EXE with a test-only fake phone (`src-tauri/examples/fake_adb.rs`, not shipped) and real FFmpeg. Adding `-WithDownload` also downloads ADB for real inside the package. None of this replaces testing with a real phone.
 
+To rerun only the UI flows (not covered by `check.ps1`; needed after changing on-screen text, buttons or flows): in `desktop`, run `npx tauri build` and `cargo build --release --example fake_adb` (in `src-tauri`), then `node e2e\package-e2e.mjs src-tauri\target\release\BiliCacheExporter.exe src-tauri\target\release\examples\fake_adb.exe 'D:\path\to\ffmpeg.exe' <new empty folder>`. This skips the in-app update run; `package.ps1` remains the full verification.
+
 Pre-commit checks: set the full path of the `FFmpeg` executable in `.check-local.psd1` (a PowerShell data file, not committed), then run `git config core.hooksPath .githooks`; every commit then runs the root `check.ps1` (which calls `desktop/check.ps1`).
 
 ## Development assistance
