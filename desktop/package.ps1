@@ -34,7 +34,7 @@ try {
     $evidence = Join-Path $run 'evidence'
     New-Item -ItemType Directory -Path $package, $evidence, (Join-Path $package 'licenses') -Force | Out-Null
     Copy-Item -LiteralPath $built -Destination $package
-    Copy-Item -LiteralPath (Join-Path $desktop 'README.md') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $package
     Invoke-Checked 'node' @((Join-Path $desktop 'e2e\licenses.mjs'), (Join-Path $package 'licenses\THIRD-PARTY.txt'))
 
     # Package shape: one application EXE, no framework DLLs, no runtime state, tools or media.
