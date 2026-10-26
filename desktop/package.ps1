@@ -107,7 +107,6 @@ try {
         '- 工具下載（固定版本，按需）：ADB r37.0.1 8,044,989 bytes；FFmpeg 9.0.1 essentials 111,253,802 bytes。落地 tools 資料夾約 215,396,052 bytes（2026-10-26 實測）。',
         "- 啟動到視窗可操作（UI 掛載並顯示，不含連線／掃描），三次新資料夾：$(($startup | ForEach-Object { [Math]::Round($_) }) -join '、') ms；中位數 $([Math]::Round($median)) ms。",
         "- 閒置 8 秒、未連線：應用程序 Working Set $(& $mib $appWs) MiB；含 WebView2 子程序共 $($procs.Count) 個程序，Working Set 合計 $(& $mib $treeWs) MiB、Private 合計 $(& $mib $treePrivate) MiB。WebView2 子程序共享系統元件，合計值會重複計算共享頁面。",
-        '- 與舊版比較：舊 WinForms 量測為「正常視窗閒置 Working Set 約 62 MiB、開窗中位數約 0.34 秒」，只量單一 .NET 程序；新版另含 WebView2 多程序，量測範圍不同，不宣稱更快或更省記憶體。',
         "- WebView2 缺少（以空的 WEBVIEW2_BROWSER_EXECUTABLE_FOLDER 模擬）：顯示原生「需要安裝 WebView2」對話框，未啟動 WebView 子程序；按「否」以代碼 2 結束且未寫入任何檔案（「是」只開啟 Microsoft 官方頁，未自動化點擊）。不是乾淨虛擬機上的實測。",
         "- 正式包整合流程：$(@($e2eResults.results | Where-Object ok).Count)/$(@($e2eResults.results).Count) PASS（假手機＋真實 FFmpeg/FFprobe，DPR $($e2eResults.devicePixelRatio)）。截圖在 evidence/。",
         $(if ($WithDownload) { '- 本次包含正式包內的真實 ADB 下載、SHA-256 核對與啟用。' } else { '- 本次未在正式包內執行真實下載（加 -WithDownload 才會）。' }),

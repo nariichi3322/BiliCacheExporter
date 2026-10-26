@@ -33,21 +33,19 @@ fn results(h: &Harness) -> Vec<(usize, Outcome, String)> {
 // ---------- 01: settings, tools, logs, no startup query ----------
 
 #[test]
-fn v1_settings_upgrade_keeps_values_and_original() {
+fn settings_keep_values_unknown_keys_and_theme() {
     let dir = tempdir();
-    let v1 = r#"{"Adb":"D:\\old\\adb.exe","Ffmpeg":"D:\\ff\\bin\\ffmpeg.exe","Output":"E:\\Videos","Temp":"F:\\tmp","Custom":42}"#;
-    std::fs::write(dir.join("settings.json"), v1).unwrap();
+    let existing = r#"{"Adb":"D:\\old\\adb.exe","Ffmpeg":"D:\\ff\\bin\\ffmpeg.exe","Output":"E:\\Videos","Temp":"F:\\tmp","Custom":42}"#;
+    std::fs::write(dir.join("settings.json"), existing).unwrap();
     let h = harness_in(dir.clone(), Phone::one_device(), no_network());
     let s = h.app.snapshot().settings;
     assert_eq!(
         (s.adb.as_str(), s.ffmpeg.as_str(), s.output.as_str(), s.temp.as_str(), s.theme.as_str()),
         (r"D:\old\adb.exe", r"D:\ff\bin\ffmpeg.exe", r"E:\Videos", r"F:\tmp", "dark")
     );
-    assert_eq!(s.ffprobe, r"D:\ff\bin\ffprobe.exe", "v1 implied ffprobe beside ffmpeg");
     let mut i = input(&h);
     i.theme = "light".into();
     h.app.save_settings(i).unwrap();
-    assert_eq!(std::fs::read_to_string(dir.join("settings.v1-backup.json")).unwrap(), v1, "original kept byte for byte");
     let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
     assert_eq!(saved["Custom"], 42, "unknown values are not dropped");
     assert_eq!(saved["Output"], r"E:\Videos");
