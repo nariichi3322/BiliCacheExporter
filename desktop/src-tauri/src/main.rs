@@ -96,6 +96,18 @@ async fn check_update(s: State<'_, Shared>) -> Out<Release> {
     blocking(move || app.check_update()).await
 }
 
+/// Installs the update, then starts the new executable and exits this one.
+#[tauri::command]
+async fn install_update(s: State<'_, Shared>, handle: tauri::AppHandle, version: String) -> Out<()> {
+    let app = s.app.clone();
+    let exe = std::env::current_exe().map_err(|e| err(e.to_string()))?;
+    let target = exe.clone();
+    blocking(move || app.install_update(&target, &version)).await?;
+    std::process::Command::new(&exe).current_dir(&s.app.dir).spawn().map_err(|e| err(format!("新版本已安裝，但無法自動重新啟動：{e}。請手動開啟程式。")))?;
+    handle.exit(0);
+    Ok(())
+}
+
 #[tauri::command]
 async fn skip_version(s: State<'_, Shared>, version: String) -> Out<Settings> {
     let app = s.app.clone();
@@ -199,6 +211,7 @@ fn main() {
             download_tools,
             open_folder,
             check_update,
+            install_update,
             skip_version,
             open_url
         ])

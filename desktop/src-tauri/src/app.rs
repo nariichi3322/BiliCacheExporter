@@ -151,6 +151,7 @@ impl App {
             },
         };
         log.log(&format!("BiliCacheExporter {}", crate::VERSION));
+        update::clean_old(&dir);
         App {
             dir,
             log,
@@ -456,6 +457,15 @@ impl App {
     /// Asks GitHub for the latest release; works while busy since it changes nothing.
     pub fn check_update(&self) -> Out<Release> {
         Ok(update::check(&*self.fetch, crate::VERSION)?)
+    }
+
+    /// Replaces `exe` with `version`; refused while a scan or export runs. The caller restarts the app.
+    pub fn install_update(&self, exe: &Path, version: &str) -> Out<()> {
+        self.writable()?;
+        let (_busy, cancel) = self.begin().map_err(|_| err("匯出完成後才能更新。"))?;
+        update::install(exe, version, &*self.fetch, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
+        self.log.log(&format!("已更新到 {version}，重新啟動中。"));
+        Ok(())
     }
 
     /// Startup checks stay quiet about this version; manual checks still show it.

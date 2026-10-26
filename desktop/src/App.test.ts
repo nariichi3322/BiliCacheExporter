@@ -131,7 +131,6 @@ describe('compact list', () => {
     const dialog = w.get('[role=dialog]')
     expect(dialog.text()).toContain('有新版本 2.1.0')
     expect(dialog.get('pre.notes').text()).toBe(release.notes)
-    expect(dialog.findAll('button').find(b => b.text() === '更新')!.attributes('disabled')).toBeDefined()
     await dialog.findAll('button').find(b => b.text() === '稍後')!.trigger('click')
     expect(w.find('[role=dialog]').exists()).toBe(false)
     w.unmount()
@@ -156,6 +155,48 @@ describe('compact list', () => {
     handlers.check_update = () => ({ ...release, version: '2.2.0' })
     w = await start({ settings: { ...snapshot().settings, SkipVersion: '2.1.0' } })
     expect(w.get('[role=dialog]').text()).toContain('2.2.0')
+  })
+
+  it('installs an update with progress, and offers the release page on failure', async () => {
+    handlers.check_update = () => ({ version: '2.1.0', notes: '', newer: true })
+    let finish!: (v: unknown) => void
+    handlers.install_update = () => new Promise(r => { finish = r })
+    const w = await start()
+    await w.get('[role=dialog]').findAll('button').find(b => b.text() === '更新')!.trigger('click')
+    await flushPromises()
+    expect(calls.find(c => c.cmd === 'install_update')!.args).toEqual({ version: '2.1.0' })
+    expect(w.find('[role=dialog] progress').exists()).toBe(true)
+    expect(w.get('[role=dialog]').findAll('button')).toHaveLength(0)
+    expect(w.text()).toContain('更新中')
+    finish({ ignored: true })
+    handlers.install_update = () => { throw { message: '下載檔案的 SHA-256 與發行記錄不符', cancelled: false, missing: [] } }
+    await flushPromises()
+    await w.get('[role=dialog]').findAll('button').find(b => b.text() === '更新')!.trigger('click')
+    await flushPromises()
+    const dialog = w.get('[role=dialog]')
+    expect(dialog.text()).toContain('SHA-256 與發行記錄不符')
+    await dialog.findAll('button').find(b => b.text() === '開啟 Release 頁面')!.trigger('click')
+    expect(calls.find(c => c.cmd === 'open_url')!.args).toEqual({ kind: 'releases' })
+    expect(dialog.text()).toContain('重試更新')
+  })
+
+  it('update waits while an export runs', async () => {
+    handlers.check_update = () => ({ version: '2.1.0', notes: '', newer: true })
+    handlers.export = () => new Promise(() => {})
+    const w = await start()
+    await w.get('[role=dialog]').findAll('button').find(b => b.text() === '稍後')!.trigger('click')
+    await w.findAll('button').find(b => b.text() === '連線')!.trigger('click')
+    await flushPromises()
+    await w.get('.toolbar input[type=checkbox]').setValue(true)
+    await w.get('button.primary').trigger('click')
+    await flushPromises()
+    handlers.check_tools = () => []
+    await w.findAll('button').find(b => b.text().includes('設定'))!.trigger('click')
+    await w.findAll('button').find(b => b.text() === '立即檢查')!.trigger('click')
+    await flushPromises()
+    const dialog = w.get('[role=dialog]')
+    expect(dialog.text()).toContain('匯出完成後才能更新')
+    expect(dialog.findAll('button').find(b => b.text() === '更新')!.attributes('disabled')).toBeDefined()
   })
 
   it('startup check is silent when off, up to date or offline', async () => {

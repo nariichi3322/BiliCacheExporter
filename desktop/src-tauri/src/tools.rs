@@ -226,7 +226,7 @@ fn install_staged(
 }
 
 /// Antivirus scans and just-exited tool processes briefly hold fresh executables open on Windows.
-fn rename_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn rename_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     let mut attempt = 0;
     loop {
         match std::fs::rename(from, to) {

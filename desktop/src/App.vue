@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorOf, mb, type AppEvent, type BatchProgress, type CacheItem, type Device, type DownloadProgress, type ItemResult, type Package, type Release, type Settings, type Summary, type ToolStatus } from './api'
 
-type Phase = 'idle' | 'connect' | 'scan' | 'export' | 'download' | 'recover'
+type Phase = 'idle' | 'connect' | 'scan' | 'export' | 'download' | 'recover' | 'update'
 
 const s = reactive({
   ready: false,
@@ -37,6 +37,7 @@ const s = reactive({
   tools: [] as ToolStatus[],
   updateResult: '',
   release: null as Release | null,
+  updateError: '',
   checking: false,
 })
 const draft = reactive({ adb: '', ffmpeg: '', ffprobe: '', output: '', temp: '' })
@@ -231,7 +232,10 @@ async function checkUpdate() {
   try {
     const r = await api.checkUpdate()
     s.updateResult = r.newer ? `發現新版本 ${r.version}` : '已是最新版本'
-    if (r.newer) s.release = r
+    if (r.newer) {
+      s.release = r
+      s.updateError = ''
+    }
   } catch (e) {
     s.updateResult = errorOf(e).message
   } finally {
@@ -248,9 +252,25 @@ async function startupCheck() {
     // Offline use must not be interrupted.
   }
 }
+// On success the backend starts the new version and closes this window.
+async function installUpdate() {
+  s.updateError = ''
+  s.download = null
+  await run('update', async () => {
+    try {
+      await api.installUpdate(s.release!.version)
+    } catch (e) {
+      s.updateError = errorOf(e).message
+    }
+  })
+}
+function closeRelease() {
+  s.release = null
+  s.updateError = ''
+}
 async function skipRelease() {
   const version = s.release!.version
-  s.release = null
+  closeRelease()
   try {
     s.settings = await api.skipVersion(version)
   } catch (e) {
@@ -369,7 +389,7 @@ const outcomeLabel: Record<string, string> = { success: '完成', partial: '部�
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && s.toolDialog) closeDialog()
-  else if (e.key === 'Escape' && s.release) s.release = null
+  else if (e.key === 'Escape' && s.release && s.phase !== 'update') closeRelease()
 }
 
 onMounted(async () => {
@@ -568,7 +588,7 @@ onMounted(async () => {
       </section>
 
       <div class="footer">
-        <span>{{ s.serial ? '裝置已連線' : '尚未連線' }} · {{ { idle: '待命', connect: '連線中', scan: '掃描中', export: '匯出中', download: '下載工具中', recover: '清理暫存中' }[s.phase] }}</span>
+        <span>{{ s.serial ? '裝置已連線' : '尚未連線' }} · {{ { idle: '待命', connect: '連線中', scan: '掃描中', export: '匯出中', download: '下載工具中', recover: '清理暫存中', update: '更新中' }[s.phase] }}</span>
         <span class="spacer"></span>
         <button class="quiet" :aria-expanded="s.showLogs" @click="s.showLogs = !s.showLogs">{{ s.showLogs ? '收合' : '查看' }}詳細記錄</button>
       </div>
@@ -601,10 +621,17 @@ onMounted(async () => {
         <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="release-title">
           <h3 id="release-title">有新版本 {{ s.release.version }}</h3>
           <pre class="notes" tabindex="0" aria-label="版本說明">{{ s.release.notes || '這個版本沒有附上說明。' }}</pre>
-          <div class="actions end">
-            <button @click="s.release = null">稍後</button>
+          <template v-if="s.phase === 'update'">
+            <progress aria-label="更新下載進度" :max="s.download?.total || 1" :value="s.download?.bytes ?? 0"></progress>
+            <small>{{ s.download?.stage ?? '準備中' }}<template v-if="s.download"> · {{ mb(s.download.bytes) }} / {{ mb(s.download.total) }}</template></small>
+          </template>
+          <p v-else-if="busy" class="warning">匯出完成後才能更新。</p>
+          <p v-if="s.updateError" class="warning" role="alert">{{ s.updateError }}</p>
+          <div v-if="s.phase !== 'update'" class="actions end">
+            <button v-if="s.updateError" @click="openUrl('releases')">開啟 Release 頁面</button>
+            <button @click="closeRelease">稍後</button>
             <button @click="skipRelease">略過此版本</button>
-            <button class="primary" disabled>更新</button>
+            <button class="primary" :disabled="busy" @click="installUpdate">{{ s.updateError ? '重試更新' : '更新' }}</button>
           </div>
         </section>
       </div>
