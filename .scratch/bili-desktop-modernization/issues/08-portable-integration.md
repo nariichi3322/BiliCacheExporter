@@ -42,3 +42,8 @@ Resolution: open
   - 第二次（16:22）在腳本加入啟動計時後重跑：離線時假 ADB 1.2 秒、Google 簽章 adb.exe 0.09 秒、ffprobe 3.1 秒，皆正常；正式包端到端 51/51 PASS，含首次缺工具引導、手動指定工具、搬移資料夾、設定升級、不可寫提示、連線掃描、批次匯出、封面位元組相同、取消與重試；WebView 122 個請求全部是程式內部。結果在 `offline-check.json` 與 `offline-check/e2e-console.log`。
   - 依此勾選「完成設定後離線運作」所在條件。工具下載本身需要網路，已在先前連網時於正式包內實測。第一次失敗的根因未確認；若真實使用遇到首次連線逾時，可再按一次連線，或之後再考慮放寬首次呼叫逾時。
   - 「無 WebView2」條件仍待乾淨環境實測，本票維持 open。
+- 2026-10-26：拆分 repo 後，依使用者要求從本 repo 乾淨提交 da2cf8e 重新打包驗證（`desktop/package.ps1 -WithDownload`），讓成品版本字串對應本 repo 的提交。
+  - 第一次（`dist-desktop/20261026-165741-492b910e/`）未通過：正式包端到端在「按連線後自動掃描」停住；剛建置的假 ADB 對 `adb devices -l` 沒有回應（日誌 16:58:04 有呼叫、無結果）。與先前離線檢查第一次的現象相同，這次是連網狀態，已放 `FAILED-VERIFICATION.txt`。根因仍未證實，只見於剛建置的假 ADB；真實 ADB 未出現。
+  - 第二次（`dist-desktop/20261026-170044-f0131e3e/`）通過：版本 2.0.0+da2cf8e（非 dirty）；包形狀不變；EXE 5,800,448 bytes、ZIP SHA-256 `9ED2E5A1…02EB`；正式包端到端 54/54 PASS，含正式包內真實 ADB 下載與 SHA-256 核對；啟動中位數 512 ms（508／529／512 ms）；閒置應用程序 Working Set 22.6 MiB，含 WebView2 共 7 個程序合計 337.4 MiB。缺少 WebView2 仍只以環境變數模擬。
+  - 這次沒有重跑實體離線檢查（需使用者中斷網路後執行 `desktop/e2e/offline-check.ps1`）；先前的離線證據來自 e5f1c41 成品；之後 `desktop/src`、`desktop/src-tauri` 應用程式原始碼未變，只改了測試腳本、文件與打包腳本。
+  - 「無 WebView2」條件仍待乾淨環境實測，本票維持 open。
