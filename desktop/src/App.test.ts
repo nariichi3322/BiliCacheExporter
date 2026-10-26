@@ -30,7 +30,7 @@ const items = [
 
 function snapshot(extra: Partial<Snapshot> = {}): Snapshot {
   return {
-    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark' },
+    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark', CheckUpdates: true },
     settingsError: null, storageError: null, logPath: 'log', devices: [], serial: null, items: [], generation: 0, recoverableJobs: 0,
     packages: [{ name: 'adb', title: 'Android SDK Platform-Tools（ADB）', version: '37.0.1', publisher: 'Google', url: 'https://x', sha256: 'h', size: 8044989, license: 'L' }],
     ...extra,
@@ -48,7 +48,7 @@ const connected = { devices: [{ serial: 'S1', state: 'device', detail: 'model:SM
 
 beforeEach(() => {
   calls.length = 0
-  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme }) }
+  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme, CheckUpdates: input.checkUpdates }) }
   document.body.innerHTML = ''
 })
 
@@ -122,6 +122,34 @@ describe('compact list', () => {
     expect(w.text()).toContain('輸出資料夾')
     await w.findAll('button').find(b => b.text().includes('詳細記錄'))!.trigger('click')
     expect(w.find('pre.logs').exists()).toBe(true)
+  })
+
+  it('settings has one way back and an update card', async () => {
+    handlers.check_tools = () => []
+    handlers.check_update = () => ({ version: '2.1.0', notes: '', newer: true })
+    const w = await start()
+    await w.findAll('button').find(b => b.text().includes('設定'))!.trigger('click')
+    await flushPromises()
+    expect(w.findAll('button').filter(b => b.text().includes('返回影片'))).toHaveLength(1)
+    expect(w.text()).toContain('目前版本 2.0.0')
+    expect(w.text()).not.toContain('2.0.0+test')
+    await w.findAll('button').find(b => b.text() === '立即檢查')!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('發現新版本 2.1.0')
+    handlers.check_update = () => ({ version: '2.0.0', notes: '', newer: false })
+    await w.findAll('button').find(b => b.text() === '立即檢查')!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('已是最新版本')
+    handlers.check_update = () => { throw { message: '檢查更新失敗：offline', cancelled: false, missing: [] } }
+    await w.findAll('button').find(b => b.text() === '立即檢查')!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('檢查更新失敗：offline')
+    const toggle = w.findAll('label.setting').find(l => l.text().includes('啟動時檢查更新'))!.get('input')
+    await toggle.setValue(false)
+    await flushPromises()
+    expect((calls.filter(c => c.cmd === 'save_settings').pop()!.args as any).input.checkUpdates).toBe(false)
+    await w.findAll('button').find(b => b.text() === 'GitHub 專案頁面')!.trigger('click')
+    expect(calls.find(c => c.cmd === 'open_url')!.args).toEqual({ kind: 'project' })
   })
 
   it('empty phone list offers rescan; scanning offers cancel', async () => {

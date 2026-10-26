@@ -35,6 +35,8 @@ const s = reactive({
   downloadError: '',
   recoverable: 0,
   tools: [] as ToolStatus[],
+  updateResult: '',
+  checking: false,
 })
 const draft = reactive({ adb: '', ffmpeg: '', ffprobe: '', output: '', temp: '' })
 const busy = computed(() => s.phase !== 'idle')
@@ -201,12 +203,38 @@ async function setTheme(light: boolean) {
 }
 function currentInput() {
   const t = s.settings!
-  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme }
+  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, checkUpdates: t.CheckUpdates }
+}
+async function setCheckUpdates(on: boolean) {
+  if (!s.settings) return
+  try {
+    s.settings = await api.saveSettings({ ...currentInput(), checkUpdates: on })
+  } catch (e) {
+    fail(e)
+  }
+}
+async function checkUpdate() {
+  s.checking = true
+  try {
+    const r = await api.checkUpdate()
+    s.updateResult = r.newer ? `發現新版本 ${r.version}` : '已是最新版本'
+  } catch (e) {
+    s.updateResult = errorOf(e).message
+  } finally {
+    s.checking = false
+  }
+}
+async function openUrl(kind: 'project' | 'releases') {
+  try {
+    await api.openUrl(kind)
+  } catch (e) {
+    fail(e)
+  }
 }
 async function saveDraft() {
   s.error = ''
   try {
-    s.settings = await api.saveSettings({ ...draft, theme: theme.value })
+    s.settings = await api.saveSettings({ ...currentInput(), ...draft })
     loadDraft()
     s.notice = '設定已儲存。'
     await checkTools()
@@ -355,7 +383,6 @@ onMounted(async () => {
       <section v-if="s.page === 'settings'" aria-labelledby="settings-title">
         <div class="heading">
           <div><h2 id="settings-title">設定</h2><p class="muted">外觀、工具與匯出位置</p></div>
-          <button @click="s.page = 'main'">返回影片</button>
         </div>
         <div class="settings-grid">
           <div class="panel">
@@ -395,7 +422,17 @@ onMounted(async () => {
               <span class="muted">記錄存放在程式旁的 log 資料夾，不會自動上傳；裝置序號、網址參數與個人路徑會遮蔽。</span>
               <button :disabled="!s.logPath" @click="openFolder('log')">開啟日誌資料夾</button>
             </div>
-            <small>版本 {{ s.version }}</small>
+          </div>
+          <div class="panel full">
+            <h3>更新</h3>
+            <label class="setting"><span>啟動時檢查更新</span><input type="checkbox" :checked="s.settings?.CheckUpdates ?? true" :disabled="blocked" @change="setCheckUpdates(($event.target as HTMLInputElement).checked)" /></label>
+            <div class="setting">
+              <span>目前版本 {{ s.version.split('+')[0] }}<span v-if="s.updateResult" class="muted" role="status"> · {{ s.updateResult }}</span></span>
+              <span class="actions">
+                <button @click="openUrl('project')">GitHub 專案頁面</button>
+                <button :disabled="s.checking" @click="checkUpdate">{{ s.checking ? '檢查中…' : '立即檢查' }}</button>
+              </span>
+            </div>
           </div>
         </div>
       </section>

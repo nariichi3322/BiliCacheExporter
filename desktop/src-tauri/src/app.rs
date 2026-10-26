@@ -5,6 +5,7 @@ use crate::scan::{Adb, CacheItem, Device};
 use crate::settings::{self, Settings};
 use crate::storage::{Storage, TemporaryJob};
 use crate::tools::{self, check_tool, DownloadProgress, Fetch, Kind, Package, PACKAGES};
+use crate::update::{self, Release};
 use crate::{Cancel, Error};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -68,6 +69,7 @@ pub struct SettingsInput {
     pub output: String,
     pub temp: String,
     pub theme: String,
+    pub check_updates: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -223,6 +225,7 @@ impl App {
         s.output = input.output.trim().into();
         s.temp = input.temp.trim().into();
         s.theme = if input.theme == "light" { "light".into() } else { "dark".into() };
+        s.check_updates = input.check_updates;
         settings::save(&self.dir, &s)?;
         self.state.lock().unwrap().settings = Some(s.clone());
         Ok(s)
@@ -446,6 +449,11 @@ impl App {
             }
         }
         Ok((cleaned, kept))
+    }
+
+    /// Asks GitHub for the latest release; works while busy since it changes nothing.
+    pub fn check_update(&self) -> Out<Release> {
+        Ok(update::check(&*self.fetch, crate::VERSION)?)
     }
 
     /// Called when the app exits; see [`tools::stop_own_adb`].

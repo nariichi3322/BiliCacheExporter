@@ -5,6 +5,7 @@ use bili_core::batch::Summary;
 use bili_core::log::Logger;
 use bili_core::runner::Runner;
 use bili_core::settings::Settings;
+use bili_core::update::{self, Release};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -89,6 +90,23 @@ async fn download_tools(s: State<'_, Shared>, names: Vec<String>) -> Out<Setting
     blocking(move || app.download_tools(names)).await
 }
 
+#[tauri::command]
+async fn check_update(s: State<'_, Shared>) -> Out<Release> {
+    let app = s.app.clone();
+    blocking(move || app.check_update()).await
+}
+
+/// Opens only the project's own GitHub pages; the UI cannot pass arbitrary URLs.
+#[tauri::command]
+fn open_url(kind: String) -> Out<()> {
+    let url = match kind.as_str() {
+        "project" => update::PROJECT_URL,
+        "releases" => update::RELEASES_URL,
+        _ => return Err(err("不支援的網址")),
+    };
+    shell_open(url).then_some(()).ok_or_else(|| err(format!("無法開啟瀏覽器，請手動前往 {url}")))
+}
+
 /// Opens only folders the app owns or the user configured; the UI cannot pass arbitrary paths.
 #[tauri::command]
 fn open_folder(s: State<Shared>, kind: String) -> Out<()> {
@@ -108,23 +126,25 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// ShellExecuteW reports success with a value above 32.
+fn shell_open(target: &str) -> bool {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    let opened = unsafe { ShellExecuteW(std::ptr::null_mut(), wide("open").as_ptr(), wide(target).as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
+    opened as usize > 32
+}
+
 const WEBVIEW2_URL: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// Native guidance shown before (or instead of) the web UI, since the page itself needs WebView2.
 fn webview2_guidance(title: &str, problem: &str, detail: &str) {
-    use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO};
     let text = format!(
         "{problem}\n\n({detail})\n\n按「是」開啟 Microsoft 官方下載頁，安裝「Evergreen Bootstrapper」後再重新開啟本程式。\n按「否」結束程式，不會變更任何檔案。"
     );
     let answer = unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide(title).as_ptr(), MB_YESNO | MB_ICONWARNING) };
-    if answer == IDYES {
-        let opened = unsafe { ShellExecuteW(std::ptr::null_mut(), wide("open").as_ptr(), wide(WEBVIEW2_URL).as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-        // ShellExecuteW reports success with a value above 32.
-        if opened as usize <= 32 {
-            let text = format!("無法自動開啟瀏覽器。請手動前往下列網址下載 WebView2 Runtime：\n\n{WEBVIEW2_URL}");
-            unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide(title).as_ptr(), MB_OK | MB_ICONERROR) };
-        }
+    if answer == IDYES && !shell_open(WEBVIEW2_URL) {
+        let text = format!("無法自動開啟瀏覽器。請手動前往下列網址下載 WebView2 Runtime：\n\n{WEBVIEW2_URL}");
+        unsafe { MessageBoxW(std::ptr::null_mut(), wide(&text).as_ptr(), wide(title).as_ptr(), MB_OK | MB_ICONERROR) };
     }
 }
 
@@ -171,7 +191,9 @@ fn main() {
             cancel,
             recover_jobs,
             download_tools,
-            open_folder
+            open_folder,
+            check_update,
+            open_url
         ])
         .build(tauri::generate_context!());
     // A runtime that exists but cannot start (damaged install, policy) gets the same guidance instead of a silent crash.

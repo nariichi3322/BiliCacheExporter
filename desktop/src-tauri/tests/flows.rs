@@ -18,7 +18,7 @@ fn sel(id: usize) -> Selection {
 
 fn input(h: &Harness) -> SettingsInput {
     let s = h.app.snapshot().settings;
-    SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme }
+    SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme, check_updates: true }
 }
 
 fn results(h: &Harness) -> Vec<(usize, Outcome, String)> {
@@ -61,8 +61,15 @@ fn corrupt_settings_are_reported_not_replaced() {
     let h = harness_in(dir.clone(), Phone::one_device(), no_network());
     let snap = h.app.snapshot();
     assert!(snap.settings_error.unwrap().contains("設定檔損壞"));
-    let i =
-        SettingsInput { adb: String::new(), ffmpeg: String::new(), ffprobe: String::new(), output: "C:\\x".into(), temp: String::new(), theme: "dark".into() };
+    let i = SettingsInput {
+        adb: String::new(),
+        ffmpeg: String::new(),
+        ffprobe: String::new(),
+        output: "C:\\x".into(),
+        temp: String::new(),
+        theme: "dark".into(),
+        check_updates: true,
+    };
     assert!(h.app.save_settings(i).is_err());
     assert_eq!(std::fs::read_to_string(dir.join("settings.json")).unwrap(), "{ broken", "corrupt file untouched");
     h.app.reset_settings().unwrap();
@@ -79,7 +86,15 @@ fn unwritable_folder_blocks_with_actionable_message() {
     let app = App::new(dir.clone(), runner(&phone, Logger::memory()), no_network(), std::sync::Arc::new(|_| {}), Some("程式資料夾無法寫入".into()));
     let s = app.snapshot().settings;
     let err = app
-        .save_settings(SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: "light".into() })
+        .save_settings(SettingsInput {
+            adb: s.adb,
+            ffmpeg: s.ffmpeg,
+            ffprobe: s.ffprobe,
+            output: s.output,
+            temp: s.temp,
+            theme: "light".into(),
+            check_updates: true,
+        })
         .unwrap_err();
     assert!(err.message.contains("可寫的位置"));
     assert!(app.connect(None).unwrap_err().message.contains("可寫的位置"));

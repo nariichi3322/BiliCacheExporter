@@ -104,11 +104,13 @@ pub fn check_tool(runner: &Runner, kind: Kind, path: &Path) -> Res<String> {
 }
 
 pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: &mut dyn FnMut(u64)) -> Res<()> {
-    if !url.starts_with("https://") {
+    // Plain HTTP only reaches the local server of the packaged update check (see update::SOURCE_ENV).
+    let local = url.starts_with("http://127.0.0.1:");
+    if !url.starts_with("https://") && !local {
         return fail("只接受 HTTPS 下載來源。");
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .https_only(true)
+        .https_only(!local)
         .timeout_connect(Some(std::time::Duration::from_secs(30)))
         .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
         .build()

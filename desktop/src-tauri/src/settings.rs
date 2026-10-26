@@ -22,6 +22,8 @@ pub struct Settings {
     pub temp: String,
     #[serde(default = "dark")]
     pub theme: String,
+    #[serde(default = "yes")]
+    pub check_updates: bool,
     #[serde(default)]
     pub settings_version: u32,
     #[serde(flatten)]
@@ -30,6 +32,10 @@ pub struct Settings {
 
 fn dark() -> String {
     "dark".into()
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Settings {
@@ -42,6 +48,7 @@ impl Settings {
             output: videos,
             temp: String::new(),
             theme: dark(),
+            check_updates: true,
             settings_version: VERSION,
             extra: Map::new(),
         }
