@@ -147,6 +147,7 @@ pub struct Phone {
     pub fail_pull: Option<String>,
     pub cancel_pull: Option<String>,
     pub disconnect_after_pull: Option<String>,
+    pub fail_stat: Option<String>,
     pub fail_tool: bool,
     pub calls: Vec<Vec<String>>,
     pub pulls: Vec<String>,
@@ -203,11 +204,24 @@ impl Phone {
                 }
                 return Ok(lines.join("\n"));
             }
-            let dir = unquote(rest.strip_suffix(" -type f").expect("find form"));
-            return Ok(self.files.keys().filter(|k| k.starts_with(&format!("{dir}/"))).cloned().collect::<Vec<_>>().join("\n"));
+            let stat = rest.strip_suffix(" -type f -exec stat -c '%s %n' {} +");
+            let dir = unquote(stat.or_else(|| rest.strip_suffix(" -type f")).expect("find form"));
+            let found = self.files.iter().filter(|(k, _)| k.starts_with(&format!("{dir}/")));
+            if stat.is_none() {
+                return Ok(found.map(|(k, _)| k.clone()).collect::<Vec<_>>().join("\n"));
+            }
+            // Like real `find -exec stat {} +`: a file that cannot be stat'ed fails the whole call.
+            if found.clone().any(|(k, _)| self.fail_stat.as_ref().is_some_and(|f| k.contains(f.as_str()))) {
+                return Err(Error::Failed("stat: No such file".into()));
+            }
+            return Ok(found.map(|(k, v)| format!("{} {k}", v.len())).collect::<Vec<_>>().join("\n"));
         }
         if let Some(rest) = command.strip_prefix("stat -c %s ") {
-            return self.files.get(&unquote(rest)).map(|f| f.len().to_string()).ok_or_else(|| Error::Failed("stat: No such file".into()));
+            let path = unquote(rest);
+            if self.fail_stat.as_ref().is_some_and(|f| path.contains(f.as_str())) {
+                return Err(Error::Failed("stat: No such file".into()));
+            }
+            return self.files.get(&path).map(|f| f.len().to_string()).ok_or_else(|| Error::Failed("stat: No such file".into()));
         }
         if let Some(rest) = command.strip_prefix("cat ") {
             return self.files.get(&unquote(rest)).map(|f| String::from_utf8_lossy(f).into_owned()).ok_or_else(|| Error::Failed("cat: No such file".into()));

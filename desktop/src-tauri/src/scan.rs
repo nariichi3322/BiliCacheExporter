@@ -115,6 +115,37 @@ impl Adb<'_> {
         value.trim().parse::<u64>().map_err(|_| Error::Failed(format!("無法取得檔案大小：{path}")))
     }
 
+    /// Every file under `dir` with its size, in one adb call. If that call fails (e.g. a file vanished mid-scan),
+    /// falls back to one stat per file so a single bad file only marks its own inventory line.
+    fn list_sizes(&self, serial: &str, dir: &str, cancel: &Cancel) -> Res<Vec<(String, Result<u64, String>)>> {
+        let mut files: Vec<(String, Result<u64, String>)> = Vec::new();
+        match self.shell(serial, &format!("find {} -type f -exec stat -c '%s %n' {{}} +", quote(dir)), cancel) {
+            Ok(out) => {
+                for line in out.lines().map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty()) {
+                    let Some((size, path)) = line.split_once(' ') else { return fail("手機回傳無法解析的檔案清單。") };
+                    if !files.iter().any(|(f, _)| f == path) {
+                        files.push((path.into(), size.parse().map_err(|_| format!("無法取得檔案大小：{path}"))));
+                    }
+                }
+            }
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => {
+                self.runner.log(&format!("一次盤點失敗，改為逐檔查詢大小：{e}"));
+                let listing = self.shell(serial, &format!("find {} -type f", quote(dir)), cancel)?;
+                for f in listing.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
+                    if !files.iter().any(|(x, _)| x == f) {
+                        let size = match self.size(serial, f, cancel) {
+                            Err(Error::Cancelled) => return Err(Error::Cancelled),
+                            r => r.map_err(|e| e.to_string()),
+                        };
+                        files.push((f.into(), size));
+                    }
+                }
+            }
+        }
+        Ok(files)
+    }
+
     /// Read-only scan of every installed supported app's cache. Problems stay on their own row.
     pub fn scan(&self, serial: &str, cancel: &Cancel, found: &mut dyn FnMut(&CacheItem)) -> Res<Vec<CacheItem>> {
         let mut installed = Vec::new();
@@ -188,17 +219,13 @@ impl Adb<'_> {
                 self.runner.log(&item.issue);
             }
         }
-        let listing = self.shell(serial, &format!("find {} -type f", quote(&remote)), cancel)?;
-        let mut files: Vec<String> = Vec::new();
-        for f in listing.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
-            if !files.iter().any(|x| x == f) {
-                files.push(f.to_string());
-            }
-        }
-        if files.iter().any(|p| !is_child_path(p, &remote)) {
+        let sized = self.list_sizes(serial, &remote, cancel)?;
+        if sized.iter().any(|(p, _)| !is_child_path(p, &remote)) {
             return fail("手機回傳不合法的項目檔案路徑。");
         }
-        let has = |p: &str| files.iter().any(|f| f == p);
+        let files: Vec<&String> = sized.iter().map(|(p, _)| p).collect();
+        let has = |p: &str| files.iter().any(|f| *f == p);
+        let size = |p: &str| sized.iter().find(|(f, _)| f == p).map(|(_, s)| s.clone().map_err(Error::Failed)).unwrap();
         let mut quality_dirs: Vec<&str> = Vec::new();
         for f in &files {
             if f.ends_with("/video.m4s") || f.ends_with("/audio.m4s") {
@@ -217,8 +244,8 @@ impl Adb<'_> {
                 if variant.video.is_empty() || variant.audio.is_empty() {
                     variant.issue = "缺少 video.m4s 或 audio.m4s".into();
                 } else {
-                    variant.video_size = self.size(serial, &variant.video, cancel)?;
-                    variant.audio_size = self.size(serial, &variant.audio, cancel)?;
+                    variant.video_size = size(&variant.video)?;
+                    variant.audio_size = size(&variant.audio)?;
                     if variant.video_size == 0 || variant.audio_size == 0 {
                         variant.issue = "影音檔案為空".into();
                     }
@@ -249,13 +276,12 @@ impl Adb<'_> {
             }
             item.variants.push(variant);
         }
-        for file in &files {
-            match self.size(serial, file, cancel) {
-                Ok(size) => item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: Some(size), error: String::new() }),
-                Err(Error::Cancelled) => return Err(Error::Cancelled),
+        for (file, size) in &sized {
+            match size {
+                Ok(size) => item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: Some(*size), error: String::new() }),
                 Err(e) => {
                     self.runner.log(&format!("盤點大小失敗：{file}：{e}"));
-                    item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: None, error: e.to_string() });
+                    item.inventory.push(FileInfo { path: file[remote.len() + 1..].into(), size: None, error: e.clone() });
                 }
             }
         }

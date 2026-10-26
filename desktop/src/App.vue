@@ -623,7 +623,7 @@ onMounted(async () => {
           </div>
         </section>
       </div>
-      <div v-if="s.release" class="scrim">
+      <div v-if="s.release && !s.toolDialog" class="scrim">
         <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="release-title">
           <h3 id="release-title">有新版本 {{ s.release.version }}</h3>
           <pre class="notes" tabindex="0" aria-label="版本說明">{{ s.release.notes || '這個版本沒有附上說明。' }}</pre>
