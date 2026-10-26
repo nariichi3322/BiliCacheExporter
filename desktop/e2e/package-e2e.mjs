@@ -68,6 +68,7 @@ let port = 9330
 const requests = []
 async function launch(dir, env = {}) {
   port += 1
+  const myPort = port
   const child = spawn(path.join(dir, 'BiliCacheExporter.exe'), [], {
     cwd: dir,
     env: { ...process.env, ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
@@ -95,7 +96,13 @@ async function launch(dir, env = {}) {
   })
   const send = (method, params = {}) => new Promise(r => { id += 1; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })) })
   await send('Network.enable')
-  // The page was already loaded before we attached; reload once so its own resource loads are recorded too.
+  // Reloading while still on about:blank would cancel the app's first navigation, so wait for it to finish first.
+  for (let i = 0; i < 100; i++) {
+    const r = await send('Runtime.evaluate', { expression: "location.href.startsWith('http://tauri.localhost') && document.readyState === 'complete'", returnByValue: true })
+    if (r.result?.result?.value) break
+    await sleep(100)
+  }
+  // Reload once so the page's own resource loads are recorded too.
   await send('Runtime.evaluate', { expression: 'window.__beforeReload = true' })
   await send('Page.reload')
   const app = {
@@ -128,7 +135,12 @@ async function launch(dir, env = {}) {
       ws.close()
       child.kill()
       await new Promise(r => child.once('exit', r))
-      await sleep(500)
+      // WebView2 refuses a new instance on the same profile while the old browser (other debug port) still runs.
+      for (let i = 0; i < 100; i++) {
+        try { await fetch(`http://127.0.0.1:${myPort}/json/version`) } catch { break }
+        await sleep(100)
+      }
+      await sleep(300)
     },
   }
   // Settings arrive after first render (the real window stays hidden until then); wait like a user would.
