@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $desktop = $PSScriptRoot
 $repo = Split-Path $desktop
+. (Join-Path $desktop 'package-shape.ps1')
 $FFmpeg = (Resolve-Path -LiteralPath $FFmpeg).Path
 if (!(Test-Path -LiteralPath (Join-Path (Split-Path $FFmpeg) 'ffprobe.exe'))) { throw 'ffprobe.exe must be beside ffmpeg.exe.' }
 $env:Path = (Join-Path $env:USERPROFILE '.cargo\bin') + ';' + $env:Path
@@ -22,7 +23,6 @@ try {
     Invoke-Checked 'npx' @('tauri', 'build')
     Push-Location 'src-tauri'
     try { Invoke-Checked 'cargo' @('build', '--release', '--example', 'fake_adb') } finally { Pop-Location }
-    $built = Join-Path $desktop 'src-tauri\target\release\BiliCacheExporter.exe'
     $fakeAdb = Join-Path $desktop 'src-tauri\target\release\examples\fake_adb.exe'
 
     $commit = (& git -C $repo rev-parse HEAD).Trim()
@@ -32,18 +32,8 @@ try {
     if (Test-Path -LiteralPath $run) { throw 'Refusing to reuse an artifact directory.' }
     $package = Join-Path $run 'BiliCacheExporter-win-x64'
     $evidence = Join-Path $run 'evidence'
-    New-Item -ItemType Directory -Path $package, $evidence, (Join-Path $package 'licenses') -Force | Out-Null
-    Copy-Item -LiteralPath $built -Destination $package
-    Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $package
-    Invoke-Checked 'node' @((Join-Path $desktop 'e2e\licenses.mjs'), (Join-Path $package 'licenses\THIRD-PARTY.txt'))
-
-    # Package shape: one application EXE, no framework DLLs, no runtime state, tools or media.
-    $files = @(Get-ChildItem -LiteralPath $package -File -Recurse)
-    $exes = @($files | Where-Object Extension -eq '.exe')
-    $bad = @($files | Where-Object { $_.Extension -in @('.dll', '.m4s', '.mp4', '.jpg', '.png', '.pdb', '.log') -or $_.Name -eq 'settings.json' })
-    if ($exes.Count -ne 1 -or $exes[0].Name -ne 'BiliCacheExporter.exe' -or $bad.Count -gt 0) { throw "Unexpected package contents: $($files.Name -join ', ')" }
-    $version = (& (Join-Path $package 'BiliCacheExporter.exe') --version | Out-String).Trim()
-    if (!$version.Contains($commit)) { throw "Version $version does not name commit $commit" }
+    New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+    $version = New-Package $desktop $package $commit
 
     # Startup to operable window (UI mounted and shown), three fresh runs; excludes connect/scan.
     $startup = @()
@@ -104,11 +94,8 @@ try {
     $e2eResults = Get-Content -LiteralPath (Join-Path $evidence 'e2e-results.json') -Raw | ConvertFrom-Json
 
     $exe = Get-Item -LiteralPath (Join-Path $package 'BiliCacheExporter.exe')
-    @{ Commit = $commit; Dirty = $dirty; Version = $version; ExeSHA256 = (Get-FileHash $exe).Hash } | ConvertTo-Json | Set-Content (Join-Path $package 'BUILD-INFO.json')
-    $zip = Join-Path $run 'BiliCacheExporter-win-x64.zip'
-    Compress-Archive -LiteralPath $package -DestinationPath $zip -CompressionLevel Optimal
+    $zip = Complete-Package $package $commit $dirty $version
     $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
-    "$hash  BiliCacheExporter-win-x64.zip" | Set-Content -LiteralPath (Join-Path $run 'SHA256.txt') -Encoding UTF8
     $packageBytes = (Get-ChildItem -LiteralPath $package -File -Recurse | Measure-Object Length -Sum).Sum
     $mib = { param($b) [Math]::Round($b / 1MB, 1) }
     $report = @(

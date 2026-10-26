@@ -1,4 +1,8 @@
 #!/bin/sh
 set -e
+if [ "$(git symbolic-ref --short -q HEAD)" = main ]; then
+  echo 'pre-commit: commit on a branch and merge into main by PR (see AGENTS.md).' >&2
+  exit 1
+fi
 git diff --cached --check
 pwsh -NoProfile -File ./check.ps1 -SkipRestore
