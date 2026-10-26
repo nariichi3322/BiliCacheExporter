@@ -448,6 +448,11 @@ impl App {
         Ok((cleaned, kept))
     }
 
+    /// Called when the app exits; see [`tools::stop_own_adb`].
+    pub fn stop_own_adb(&self) {
+        tools::stop_own_adb(&self.dir, &self.runner)
+    }
+
     /// Downloads the named packages (only when the user asks) and points settings at them.
     pub fn download_tools(&self, names: Vec<String>) -> Out<Settings> {
         self.writable()?;
