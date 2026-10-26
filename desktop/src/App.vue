@@ -185,7 +185,12 @@ function onEvent(e: AppEvent) {
       s.stage = e.text
       break
     case 'item':
-      if (scanning.value) s.items.push(e.item)
+      // A row is re-sent when the other app's copy of the same video merges into it.
+      if (scanning.value) {
+        const i = s.items.findIndex(x => x.id === e.item.id)
+        if (i >= 0) s.items[i] = e.item
+        else s.items.push(e.item)
+      }
       break
     case 'progress':
       s.progress = e.progress
@@ -540,6 +545,7 @@ onMounted(async () => {
                 <details v-if="item.inventory.length || item.variants.length > 1">
                   <summary>快取詳情</summary>
                   <div class="inventory">
+                    <div v-if="item.source">來源：{{ item.source }}</div>
                     <div v-for="(v, i) in item.variants" :key="'v' + i">{{ v.quality }} · {{ mb(v.videoSize + v.audioSize) }}{{ v.issue ? ' · 不可用：' + v.issue : '' }}</div>
                     <div v-for="f in item.inventory" :key="f.path">{{ f.path }} · {{ f.size === null ? '大小未知' : f.size.toLocaleString() + ' bytes' }}{{ f.error ? ' · ' + f.error : '' }}</div>
                   </div>
@@ -550,7 +556,7 @@ onMounted(async () => {
           </ul>
         </template>
         <div v-else class="rows empty" aria-live="polite">
-          <h3>{{ scanning ? (s.stage || '正在處理…') : s.serial ? '這部手機沒有國際版快取影片' : '準備好，把影片帶回電腦' }}</h3>
+          <h3>{{ scanning ? (s.stage || '正在處理…') : s.serial ? '這部手機沒有 Bilibili 快取影片' : '準備好，把影片帶回電腦' }}</h3>
           <p class="muted">{{ scanning ? '正在檢查影片資訊與可匯出狀態' : s.serial ? '可在手機下載影片後按「重新掃描」。' : '連接手機並按下「連線」，成功後會自動掃描影片。' }}</p>
           <button v-if="scanning" @click="api.cancel()">取消</button>
           <button v-else-if="s.serial" :disabled="busy || blocked" @click="rescan">重新掃描</button>

@@ -1,5 +1,5 @@
 use crate::runner::{strings, Runner};
-use crate::scan::{file_name, is_child_path, Adb, CacheItem, Variant, ROOT};
+use crate::scan::{file_name, relative, Adb, CacheItem, Variant};
 use crate::storage::Storage;
 use crate::{fail, Cancel, Error, Res};
 use regex::Regex;
@@ -37,8 +37,10 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
         return fail("影音大小無效，請重新掃描並確認下載已完成。");
     }
     let remote = &req.item.remote;
-    if !is_child_path(remote, ROOT)
-        || !is_child_path(&v.video, remote)
+    // A merged row may take its media from the other app's copy of the same part.
+    let part = relative(remote);
+    if part.is_none()
+        || !relative(&v.video).is_some_and(|r| r.starts_with(&format!("{}/", part.unwrap())))
         || !v.video.ends_with("/video.m4s")
         || v.audio != format!("{}audio.m4s", &v.video[..v.video.len() - "video.m4s".len()])
     {

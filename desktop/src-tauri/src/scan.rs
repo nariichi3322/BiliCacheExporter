@@ -5,7 +5,9 @@ use serde::Serialize;
 use serde_json::Value;
 
 pub const ROOT: &str = "/sdcard/Android/data/com.bilibili.app.in/download/";
-const PACKAGE: &str = "com.bilibili.app.in";
+pub const CHINA_ROOT: &str = "/sdcard/Android/data/tv.danmaku.bili/download/";
+/// Supported apps: (package, cache root, label). Both share the same cache layout.
+pub const APPS: [(&str, &str, &str); 2] = [("com.bilibili.app.in", ROOT, "國際版"), ("tv.danmaku.bili", CHINA_ROOT, "中國版")];
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Device {
@@ -50,6 +52,8 @@ pub struct CacheItem {
     pub cover: Option<String>,
     pub has_cover: bool,
     pub inventory: Vec<FileInfo>,
+    /// Which app's cache the row came from, e.g. "中國版（tv.danmaku.bili）".
+    pub source: String,
 }
 
 impl CacheItem {
@@ -111,44 +115,62 @@ impl Adb<'_> {
         value.trim().parse::<u64>().map_err(|_| Error::Failed(format!("無法取得檔案大小：{path}")))
     }
 
-    /// Read-only scan of the international app cache. Problems stay on their own row.
+    /// Read-only scan of every installed supported app's cache. Problems stay on their own row.
     pub fn scan(&self, serial: &str, cancel: &Cancel, found: &mut dyn FnMut(&CacheItem)) -> Res<Vec<CacheItem>> {
-        let package = self.shell(serial, &format!("pm list packages --user 0 {PACKAGE}"), cancel)?;
-        if !package.lines().any(|s| s.trim() == format!("package:{PACKAGE}")) {
-            return fail(format!("Android user 0 未找到 Bilibili 國際版 {PACKAGE}。"));
+        let mut installed = Vec::new();
+        for app in APPS {
+            let package = self.shell(serial, &format!("pm list packages --user 0 {}", app.0), cancel)?;
+            if package.lines().any(|s| s.trim() == format!("package:{}", app.0)) {
+                installed.push(app);
+            }
         }
-        let paths = self.shell(serial, &format!("find {} -type f -name entry.json", quote(ROOT)), cancel)?;
+        if installed.is_empty() {
+            return fail("Android user 0 未找到 Bilibili 國際版 com.bilibili.app.in 或中國版 tv.danmaku.bili。");
+        }
         let mut items: Vec<CacheItem> = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for entry in paths.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
-            if !seen.insert(entry.to_string()) {
-                continue;
+        for &(package, root, label) in &installed {
+            let paths = self.shell(serial, &format!("find {} -type f -name entry.json", quote(root)), cancel)?;
+            for entry in paths.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
+                if !seen.insert(entry.to_string()) {
+                    continue;
+                }
+                cancel.check()?;
+                let mut item = self.scan_entry(serial, entry, root, cancel)?;
+                item.source = format!("{label}（{package}）");
+                // The same part cached by both apps has the same `<id>/c_<cid>` path, so it becomes one row.
+                let same = relative(&item.remote).and_then(|key| items.iter().position(|i| relative(&i.remote) == Some(key)));
+                if let Some(index) = same {
+                    merge(&mut items[index], item, label);
+                    found(&items[index]);
+                    continue;
+                }
+                item.id = items.len();
+                found(&item);
+                items.push(item);
             }
-            cancel.check()?;
-            let mut item = if !is_child_path(entry, ROOT) || !entry.ends_with("/entry.json") {
-                // Untrusted paths are never kept as a source; the row only reports the problem.
-                self.runner.log(&format!("略過不合法的快取路徑：{}", serde_json::to_string(entry).unwrap()));
-                CacheItem {
-                    title: "不合法的快取路徑".into(), issue: "掃描失敗：手機回傳不合法的快取路徑。".into(), ..Default::default()
-                }
-            } else {
-                let remote = &entry[..entry.rfind('/').unwrap()];
-                let mut item = CacheItem { remote: remote.into(), title: remote[remote.rfind('/').unwrap() + 1..].into(), ..Default::default() };
-                match self.scan_item(serial, entry, &mut item, cancel) {
-                    Err(Error::Cancelled) => return Err(Error::Cancelled),
-                    Err(e) => {
-                        item.issue = format!("掃描失敗：{e}");
-                        self.runner.log(&item.issue);
-                    }
-                    Ok(()) => {}
-                }
-                item
-            };
-            item.id = items.len();
-            found(&item);
-            items.push(item);
         }
         Ok(items)
+    }
+
+    fn scan_entry(&self, serial: &str, entry: &str, root: &str, cancel: &Cancel) -> Res<CacheItem> {
+        Ok(if !is_child_path(entry, root) || !entry.ends_with("/entry.json") {
+            // Untrusted paths are never kept as a source; the row only reports the problem.
+            self.runner.log(&format!("略過不合法的快取路徑：{}", serde_json::to_string(entry).unwrap()));
+            CacheItem { title: "不合法的快取路徑".into(), issue: "掃描失敗：手機回傳不合法的快取路徑。".into(), ..Default::default() }
+        } else {
+            let remote = &entry[..entry.rfind('/').unwrap()];
+            let mut item = CacheItem { remote: remote.into(), title: remote[remote.rfind('/').unwrap() + 1..].into(), ..Default::default() };
+            match self.scan_item(serial, entry, &mut item, cancel) {
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
+                Err(e) => {
+                    item.issue = format!("掃描失敗：{e}");
+                    self.runner.log(&item.issue);
+                }
+                Ok(()) => {}
+            }
+            item
+        })
     }
 
     fn scan_item(&self, serial: &str, entry: &str, item: &mut CacheItem, cancel: &Cancel) -> Res<()> {
@@ -237,25 +259,7 @@ impl Adb<'_> {
                 }
             }
         }
-        let usable: Vec<usize> = (0..item.variants.len()).filter(|&i| item.variants[i].issue.is_empty()).collect();
-        if usable.len() == 1 {
-            item.auto_variant = Some(usable[0]);
-            item.quality = item.variants[usable[0]].quality.clone();
-        } else if item.variants.len() > 1 {
-            item.quality = format!("{} 個版本（需選擇畫質）", item.variants.len());
-            if item.issue.is_empty() {
-                if usable.is_empty() {
-                    item.issue = "沒有完整可匯出的畫質版本".into();
-                } else {
-                    item.needs_choice = true;
-                }
-            }
-        } else if item.variants.len() == 1 {
-            item.issue = item.variants[0].issue.clone();
-            item.quality = item.variants[0].quality.clone();
-        } else if item.issue.is_empty() {
-            item.issue = "缺少分離影音；此格式待辨識／不支援".into();
-        }
+        settle(item);
         item.has_cover = has(&format!("{remote}/cover.jpg"));
         if item.has_cover {
             match self.read_cover(serial, &format!("{remote}/cover.jpg"), cancel) {
@@ -289,6 +293,61 @@ impl Adb<'_> {
         }
         Ok(Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
     }
+}
+
+/// Path below the supported app's cache root, e.g. `<id>/c_<cid>`; `None` outside every root.
+pub fn relative(path: &str) -> Option<&str> {
+    APPS.iter().find(|app| is_child_path(path, app.1)).map(|app| &path[app.1.len()..])
+}
+
+/// Derives the row's choice and issue from its variants.
+fn settle(item: &mut CacheItem) {
+    let usable: Vec<usize> = (0..item.variants.len()).filter(|&i| item.variants[i].issue.is_empty()).collect();
+    if usable.len() == 1 {
+        item.auto_variant = Some(usable[0]);
+        item.quality = item.variants[usable[0]].quality.clone();
+    } else if item.variants.len() > 1 {
+        item.quality = format!("{} 個版本（需選擇畫質）", item.variants.len());
+        if item.issue.is_empty() {
+            if usable.is_empty() {
+                item.issue = "沒有完整可匯出的畫質版本".into();
+            } else {
+                item.needs_choice = true;
+            }
+        }
+    } else if item.variants.len() == 1 {
+        item.issue = item.variants[0].issue.clone();
+        item.quality = item.variants[0].quality.clone();
+    } else if item.issue.is_empty() {
+        item.issue = "缺少分離影音；此格式待辨識／不支援".into();
+    }
+}
+
+/// Folds the same part from another app into `into`: every distinct quality joins its menu,
+/// and for a quality both apps hold, a complete copy wins.
+fn merge(into: &mut CacheItem, other: CacheItem, label: &str) {
+    // Quality labels start with the cache directory name, e.g. "80（快取目錄）…".
+    let dir = |v: &Variant| v.quality.split('（').next().unwrap_or_default().to_string();
+    for v in other.variants {
+        match into.variants.iter().position(|x| dir(x) == dir(&v)) {
+            Some(i) if !into.variants[i].issue.is_empty() && v.issue.is_empty() => into.variants[i] = v,
+            Some(_) => {}
+            None => into.variants.push(v),
+        }
+    }
+    into.inventory.extend(other.inventory.into_iter().map(|f| FileInfo { path: format!("{label}：{}", f.path), ..f }));
+    into.source = format!("{}、{}", into.source, other.source);
+    if !into.has_cover && other.has_cover {
+        // Export reads the cover from `remote`, so point it at the app that has one.
+        (into.remote, into.cover, into.has_cover) = (other.remote, other.cover, true);
+    }
+    if into.variants.iter().any(|v| v.issue.is_empty()) {
+        into.issue.clear();
+    } else if into.issue.is_empty() {
+        into.issue = other.issue;
+    }
+    (into.auto_variant, into.needs_choice, into.quality) = (None, false, String::new());
+    settle(into);
 }
 
 fn field(v: &Value, key: &str) -> String {
@@ -372,6 +431,8 @@ mod tests {
         assert!(is_child_path(&format!("{ROOT}1/c_1/entry.json"), ROOT));
         assert!(!is_child_path(&format!("{ROOT}1/../x/entry.json"), ROOT));
         assert!(!is_child_path("/sdcard/other/entry.json", ROOT));
+        assert!(is_child_path(&format!("{CHINA_ROOT}1/c_1/entry.json"), CHINA_ROOT));
+        assert!(!is_child_path(&format!("{CHINA_ROOT}1/c_1/entry.json"), ROOT));
         assert_eq!(quote("a'b"), "'a'\"'\"'b'");
         assert_eq!(parse_devices("List of devices attached\nA device model:X\nB unauthorized\n* daemon\n").len(), 2);
     }

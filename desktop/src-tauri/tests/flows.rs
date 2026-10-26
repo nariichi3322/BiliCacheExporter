@@ -6,7 +6,7 @@ use bili_core::app::{App, Event, Selection, SettingsInput};
 use bili_core::batch::{Outcome, Summary};
 use bili_core::export::{export, Request};
 use bili_core::log::Logger;
-use bili_core::scan::{Adb, ROOT};
+use bili_core::scan::{Adb, CHINA_ROOT, ROOT};
 use bili_core::storage::Storage;
 use bili_core::Cancel;
 use common::*;
@@ -234,6 +234,58 @@ fn empty_cache_and_missing_app() {
     let h = harness(Phone { package: false, ..Phone::one_device() });
     assert!(h.app.connect(None).unwrap_err().message.contains("國際版"));
     assert!(h.app.snapshot().serial.is_none(), "failed scan leaves no usable state");
+}
+
+#[test]
+fn china_app_is_scanned_and_same_video_in_both_apps_is_one_row() {
+    let mut phone = Phone { package: false, china: true, ..Phone::one_device() };
+    phone.add_in(CHINA_ROOT, "1/c_1", "中國版影片", &["16"], true);
+    let h = harness(phone);
+    let r = h.app.connect(None).unwrap();
+    assert_eq!(r.items.len(), 1);
+    assert_eq!(r.items[0].title, "中國版影片 — 第一集");
+    assert_eq!(r.items[0].source, "中國版（tv.danmaku.bili）");
+    assert_eq!(h.app.export(r.generation, vec![sel(r.items[0].id)]).unwrap().successful, 1);
+    assert!(mp4s(&h.dir.join("output")).contains(&"中國版影片 — 第一集.mp4".to_string()));
+
+    // The same part in both apps is one row; its qualities from both apps share one menu.
+    let mut phone = Phone { china: true, ..Phone::one_device() };
+    let intl = phone.add("1/c_1", "影片", &["80", "64"], false);
+    phone.files.remove(&format!("{intl}/64/audio.m4s"));
+    phone.add_in(CHINA_ROOT, "1/c_1", "影片", &["16", "64"], true);
+    phone.add("2/c_2", "別部", &["80"], false);
+    let h = harness(phone);
+    let r = h.app.connect(None).unwrap();
+    assert_eq!(r.items.len(), 2);
+    let merged = r.items.iter().find(|i| i.title == "影片 — 第一集").unwrap();
+    assert_eq!(merged.source, "國際版（com.bilibili.app.in）、中國版（tv.danmaku.bili）");
+    let mut qualities: Vec<&str> = merged.variants.iter().map(|v| v.quality.split('（').next().unwrap()).collect();
+    qualities.sort();
+    assert_eq!(qualities, ["16", "64", "80"], "one entry per quality");
+    assert!(merged.variants.iter().all(|v| v.issue.is_empty()), "the complete 64 from the China app replaced the broken one");
+    assert!(merged.needs_choice && merged.has_cover && merged.remote.starts_with(CHINA_ROOT), "cover comes from the app that has one");
+    assert_eq!(h.events.lock().unwrap().iter().filter(|e| matches!(e, Event::Item { item } if item.id == merged.id)).count(), 2, "merged row is re-sent");
+    let q80 = merged.variants.iter().position(|v| v.quality.starts_with("80")).unwrap();
+    assert!(merged.variants[q80].video.starts_with(ROOT));
+    let summary = h.app.export(r.generation, vec![Selection { id: merged.id, variant: Some(q80) }]).unwrap();
+    assert_eq!(summary, Summary { total: 1, successful: 1, ..Default::default() }, "international media with the China cover");
+
+    // Export only accepts media of the same part, under a supported app's cache root.
+    let mut phone = Phone { package: false, china: true, ..Phone::one_device() };
+    phone.add_in(CHINA_ROOT, "1/c_1", "外部", &["16"], true);
+    phone.add_in(CHINA_ROOT, "2/c_2", "別部", &["16"], true);
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(phone));
+    let runner = runner(&shared, Logger::memory());
+    let adb = Adb { runner: &runner, exe: "fake-adb.exe".into() };
+    let item = adb.scan(SERIAL, &Cancel::default(), &mut |_| {}).unwrap().into_iter().find(|i| i.remote.ends_with("1/c_1")).unwrap();
+    let storage = Storage::new(&tempdir(), Logger::memory()).unwrap();
+    let out = tempdir();
+    for part in ["/sdcard/Android/data/com.example.other/download/1/c_1", &format!("{CHINA_ROOT}2/c_2"), &format!("{ROOT}2/c_2")] {
+        let variant = bili_core::scan::Variant { video: format!("{part}/16/video.m4s"), audio: format!("{part}/16/audio.m4s"), ..item.variants[0].clone() };
+        let request =
+            Request { serial: SERIAL, item: &item, variant: &variant, ffmpeg: &ffmpeg(), ffprobe: &ffprobe(), output: &out.to_string_lossy(), temp: "" };
+        assert!(export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {}).unwrap_err().to_string().contains("同一個分 P"), "{part}");
+    }
 }
 
 #[test]

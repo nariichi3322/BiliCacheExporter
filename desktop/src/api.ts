@@ -31,6 +31,7 @@ export interface CacheItem {
   cover: string | null
   hasCover: boolean
   inventory: FileInfo[]
+  source: string
 }
 export interface Package { name: string; title: string; version: string; publisher: string; url: string; sha256: string; size: number; license: string }
 export interface Snapshot {
