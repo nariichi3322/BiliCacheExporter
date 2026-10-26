@@ -2,7 +2,9 @@
 // Drives the real WebView2 window over the DevTools protocol. Usage:
 //   node e2e/package-e2e.mjs <BiliCacheExporter.exe> <fake_adb.exe> <ffmpeg.exe> <work dir> [--with-download]
 import { spawn, execFileSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
+import http from 'node:http'
 import path from 'node:path'
 
 const [exe, fakeAdb, ffmpeg, work] = process.argv.slice(2)
@@ -45,12 +47,13 @@ function makePhone(dir) {
   fs.writeFileSync(path.join(dir, 'devices.txt'), 'List of devices attached\nFAKE-SERIAL-0001\tdevice product:x model:SM_S9260 device:y\n')
 }
 
-function makeFolder(name, { tools }) {
+// Update checks stay off unless a run points them at the local fake release server (keeps runs offline).
+function makeFolder(name, { tools, checkUpdates = false }) {
   const dir = path.join(work, name)
   fs.rmSync(dir, { recursive: true, force: true })
   fs.mkdirSync(dir, { recursive: true })
   fs.copyFileSync(exe, path.join(dir, 'BiliCacheExporter.exe'))
-  const settings = { Output: path.join(dir, 'out'), Temp: '', Theme: 'dark', Ffmpeg: ffmpeg, Ffprobe: ffprobe, Adb: '' }
+  const settings = { Output: path.join(dir, 'out'), Temp: '', Theme: 'dark', Ffmpeg: ffmpeg, Ffprobe: ffprobe, Adb: '', CheckUpdates: checkUpdates }
   if (tools) {
     const adbDir = path.join(dir, 'tools', 'adb')
     fs.mkdirSync(path.join(adbDir, 'fake-phone'), { recursive: true })
@@ -81,6 +84,11 @@ async function launch(dir, env = {}) {
     } catch {}
   }
   if (!target) throw new Error('DevTools target not found')
+  return attach(target, child, myPort)
+}
+
+// Drives an already running window; `child` is the spawned process, or { pid } for one this script did not start.
+async function attach(target, child, myPort) {
   const ws = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise(r => ws.addEventListener('open', r, { once: true }))
   let id = 0
@@ -132,8 +140,13 @@ async function launch(dir, env = {}) {
     },
     async close() {
       ws.close()
-      child.kill()
-      await new Promise(r => child.once('exit', r))
+      if (child.once) {
+        child.kill()
+        await new Promise(r => child.once('exit', r))
+      } else {
+        process.kill(child.pid)
+        for (let i = 0; i < 100 && pidsOf(child.exe).includes(child.pid); i++) await sleep(100)
+      }
       // WebView2 refuses a new instance on the same profile while the old browser (other debug port) still runs.
       for (let i = 0; i < 100; i++) {
         try { await fetch(`http://127.0.0.1:${myPort}/json/version`) } catch { break }
@@ -146,6 +159,8 @@ async function launch(dir, env = {}) {
   await app.waitFor("!window.__beforeReload && !!document.querySelector('input[aria-label=輸出資料夾]')?.value")
   return app
 }
+
+const pidsOf = file => run('powershell', ['-NoProfile', '-Command', `@(Get-CimInstance Win32_Process | Where-Object ExecutablePath -eq '${file.replace(/'/g, "''")}').ProcessId -join ','`]).trim().split(',').filter(Boolean).map(Number)
 
 const calls = dir => (fs.existsSync(path.join(dir, 'tools/adb/fake-phone/calls.log')) ? fs.readFileSync(path.join(dir, 'tools/adb/fake-phone/calls.log'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : [])
 const outputs = dir => (fs.existsSync(path.join(dir, 'out')) ? fs.readdirSync(path.join(dir, 'out')).filter(n => n.endsWith('.mp4') && !n.startsWith('.')).sort() : [])
@@ -299,7 +314,8 @@ const tabTo = async label => {
 check(await tabTo('設定'), 'Keyboard reaches 設定')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
 check(await app.waitFor("document.body.innerText.includes('必要工具與位置')"), 'Settings opens by keyboard')
-check(await tabTo('返回影片'), 'Keyboard reaches 返回影片')
+// The header toggle keeps focus and now reads 返回影片 (the settings page has no second back button).
+check(await app.eval("document.activeElement?.textContent?.trim() === '返回影片'"), 'Keyboard focus stays on the toggle, now 返回影片')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
 check(await app.waitFor("document.querySelector('.device') !== null && !document.body.innerText.includes('必要工具與位置')"), 'Returns to the list by keyboard')
 check(await app.eval("document.documentElement.dataset.theme") === 'light', 'Theme persists across restart')
@@ -365,6 +381,77 @@ await app.close()
   check(await ra.waitFor("document.body.innerText.includes('可寫的位置')"), 'Unwritable program folder shows move-to-writable guidance')
   await ra.shot('13-unwritable-dark')
   await ra.close()
+}
+
+// ---------- C: in-app update replaces the running EXE and restarts it ----------
+// The "new release" is this build plus marker bytes appended after the PE image (still runnable), so the
+// swapped-in file is identifiable without a second build; both report the same version.
+{
+  const dir = makeFolder('update', { tools: true, checkUpdates: true })
+  const target = path.join(dir, 'BiliCacheExporter.exe')
+  const oldBytes = fs.readFileSync(target)
+  const newBytes = Buffer.concat([oldBytes, Buffer.from('\nBILI-E2E-UPDATE-MARKER\n')])
+  const release = path.join(work, 'update-release')
+  fs.rmSync(release, { recursive: true, force: true })
+  fs.mkdirSync(path.join(release, 'BiliCacheExporter-win-x64'), { recursive: true })
+  fs.writeFileSync(path.join(release, 'BiliCacheExporter-win-x64', 'BiliCacheExporter.exe'), newBytes)
+  const zip = path.join(release, 'BiliCacheExporter-win-x64.zip')
+  run('powershell', ['-NoProfile', '-Command', `Compress-Archive -LiteralPath '${path.join(release, 'BiliCacheExporter-win-x64')}' -DestinationPath '${zip}'`])
+  const zipBytes = fs.readFileSync(zip)
+  const sums = `${crypto.createHash('sha256').update(zipBytes).digest('hex').toUpperCase()}  BiliCacheExporter-win-x64.zip\n`
+  const served = []
+  const server = http.createServer((req, res) => {
+    served.push(req.url)
+    const routes = {
+      '/repos/nariichi3322/BiliCacheExporter/releases/latest': JSON.stringify({ tag_name: 'v99.0.0', body: '- 端到端測試用的假版本', assets: [{ name: 'BiliCacheExporter-win-x64.zip', size: zipBytes.length }] }),
+      '/nariichi3322/BiliCacheExporter/releases/download/v99.0.0/SHA256.txt': sums,
+      '/nariichi3322/BiliCacheExporter/releases/download/v99.0.0/BiliCacheExporter-win-x64.zip': zipBytes,
+    }
+    if (!(req.url in routes)) return res.writeHead(404).end()
+    res.writeHead(200).end(routes[req.url])
+  })
+  await new Promise(r => server.listen(0, '127.0.0.1', r))
+  const source = `http://127.0.0.1:${server.address().port}`
+  const settingsBefore = fs.readFileSync(path.join(dir, 'settings.json'))
+  const adbBefore = fs.readFileSync(path.join(dir, 'tools/adb/adb.exe'))
+
+  const old = await launch(dir, { BILI_UPDATE_SOURCE: source })
+  check(await old.waitFor("document.querySelector('[role=dialog]')?.innerText.includes('有新版本 99.0.0')"), 'Startup check finds the newer release and shows its notes', served.join(' '))
+  await old.shot('14-update-prompt-dark')
+  const oldPid = old.child.pid
+  await old.click('更新')
+  const exited = await new Promise(r => { old.child.once('exit', () => r(true)); setTimeout(() => r(old.child.exitCode !== null), 60000) })
+  check(exited, 'Old process exits after installing the update')
+  let newPid
+  for (let i = 0; i < 100 && !newPid; i++) {
+    newPid = pidsOf(target).find(p => p !== oldPid)
+    if (!newPid) await sleep(200)
+  }
+  check(!!newPid, 'A new process starts from the same program folder', String(newPid))
+  check(Buffer.compare(fs.readFileSync(target), newBytes) === 0, 'The EXE on disk is the downloaded release')
+  check(Buffer.compare(fs.readFileSync(path.join(dir, 'settings.json')), settingsBefore) === 0 && Buffer.compare(fs.readFileSync(path.join(dir, 'tools/adb/adb.exe')), adbBefore) === 0, 'settings.json and tools/ are untouched')
+  let page
+  for (let i = 0; i < 150 && !page; i++) {
+    await sleep(200)
+    try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page') } catch {}
+  }
+  if (page && newPid) {
+    const fresh = await attach(page, { pid: newPid, exe: target }, port)
+    check(await fresh.waitFor("document.querySelector('[role=dialog]')?.innerText.includes('有新版本 99.0.0')"), 'Restarted app is operable and checks again at startup')
+    await fresh.shot('15-after-update-dark')
+    let cleaned = false
+    for (let i = 0; i < 100 && !cleaned; i++) {
+      cleaned = !fs.existsSync(target + '.old')
+      if (!cleaned) await sleep(200)
+    }
+    check(cleaned, 'The previous EXE (.old) is removed after the restart')
+    check(!fs.readdirSync(dir).some(n => n.startsWith('.update-')), 'No update staging folder is left behind')
+    await fresh.close()
+  } else {
+    check(false, 'Restarted app window reachable over DevTools')
+    if (newPid) process.kill(newPid)
+  }
+  server.close()
 }
 
 const remote = [...new Set(requests)].filter(u => !/^(https?:\/\/(tauri|ipc)\.localhost\/|data:|blob:|about:)/.test(u))

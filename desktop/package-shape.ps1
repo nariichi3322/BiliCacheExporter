@@ -4,7 +4,7 @@
 # Fills $Package with the release EXE, README and licenses, checks its shape, and returns the EXE's --version text.
 function New-Package([string]$Desktop, [string]$Package, [string]$Commit) {
     New-Item -ItemType Directory -Path (Join-Path $Package 'licenses') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $Desktop 'src-tauri\target\release\BiliCacheExporter.exe'), (Join-Path (Split-Path $Desktop) 'README.md'), (Join-Path (Split-Path $Desktop) 'LICENSE') -Destination $Package
+    Copy-Item -LiteralPath (Join-Path $Desktop 'src-tauri\target\release\BiliCacheExporter.exe'), (Join-Path (Split-Path $Desktop) 'README.md'), (Join-Path (Split-Path $Desktop) 'README.en.md'), (Join-Path (Split-Path $Desktop) 'LICENSE') -Destination $Package
     node (Join-Path $Desktop 'e2e\licenses.mjs') (Join-Path $Package 'licenses\THIRD-PARTY.txt')
     if ($LASTEXITCODE) { throw 'Writing licenses failed' }
 

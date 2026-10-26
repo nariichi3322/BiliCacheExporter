@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
-import { api, errorOf, mb, type AppEvent, type BatchProgress, type CacheItem, type Device, type DownloadProgress, type ItemResult, type Package, type Settings, type Summary, type ToolStatus } from './api'
+import { api, errorOf, mb, type AppEvent, type BatchProgress, type CacheItem, type Device, type DownloadProgress, type ItemResult, type Package, type Release, type Settings, type Summary, type ToolStatus } from './api'
 
-type Phase = 'idle' | 'connect' | 'scan' | 'export' | 'download' | 'recover'
+type Phase = 'idle' | 'connect' | 'scan' | 'export' | 'download' | 'recover' | 'update'
 
 const s = reactive({
   ready: false,
@@ -35,6 +35,10 @@ const s = reactive({
   downloadError: '',
   recoverable: 0,
   tools: [] as ToolStatus[],
+  updateResult: '',
+  release: null as Release | null,
+  updateError: '',
+  checking: false,
 })
 const draft = reactive({ adb: '', ffmpeg: '', ffprobe: '', output: '', temp: '' })
 const busy = computed(() => s.phase !== 'idle')
@@ -42,6 +46,10 @@ const scanning = computed(() => s.phase === 'connect' || s.phase === 'scan')
 const blocked = computed(() => !!s.storageError || !!s.settingsError)
 const theme = computed(() => s.settings?.Theme ?? 'dark')
 watch(theme, t => { document.documentElement.dataset.theme = t }, { immediate: true })
+const accent = computed(() => s.settings?.Accent ?? 'blue')
+watch(accent, a => { document.documentElement.dataset.accent = a }, { immediate: true })
+// Swatch colours match each preset's dark-mode button colour in style.css.
+const accents = [['blue', '藍色', '#2868da'], ['pink', 'B 站粉', '#d6336c'], ['green', '綠色', '#187a4c'], ['purple', '紫色', '#7048e8'], ['orange', '橘色', '#c2410c'], ['teal', '青色', '#0f7c80']] as const
 
 function variantOf(item: CacheItem): number | null {
   return s.choices[item.id] ?? item.autoVariant ?? null
@@ -201,12 +209,85 @@ async function setTheme(light: boolean) {
 }
 function currentInput() {
   const t = s.settings!
-  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme }
+  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, accent: t.Accent, checkUpdates: t.CheckUpdates }
+}
+async function setAccent(value: string) {
+  if (!s.settings) return
+  try {
+    s.settings = await api.saveSettings({ ...currentInput(), accent: value })
+  } catch (e) {
+    fail(e)
+  }
+}
+async function setCheckUpdates(on: boolean) {
+  if (!s.settings) return
+  try {
+    s.settings = await api.saveSettings({ ...currentInput(), checkUpdates: on })
+  } catch (e) {
+    fail(e)
+  }
+}
+async function checkUpdate() {
+  s.checking = true
+  try {
+    const r = await api.checkUpdate()
+    s.updateResult = r.newer ? `發現新版本 ${r.version}` : '已是最新版本'
+    if (r.newer) {
+      s.release = r
+      s.updateError = ''
+    }
+  } catch (e) {
+    s.updateResult = errorOf(e).message
+  } finally {
+    s.checking = false
+  }
+}
+// Startup check: only a newer, not skipped release is shown; no update or an error stays silent.
+async function startupCheck() {
+  if (!s.settings?.CheckUpdates) return
+  try {
+    const r = await api.checkUpdate()
+    if (r.newer && r.version !== s.settings.SkipVersion) s.release = r
+  } catch {
+    // Offline use must not be interrupted.
+  }
+}
+// On success the backend starts the new version and closes this window.
+async function installUpdate() {
+  s.updateError = ''
+  s.download = null
+  await run('update', async () => {
+    try {
+      await api.installUpdate(s.release!.version)
+    } catch (e) {
+      s.updateError = errorOf(e).message
+    }
+  })
+}
+function closeRelease() {
+  s.release = null
+  s.updateError = ''
+}
+async function skipRelease() {
+  const version = s.release!.version
+  closeRelease()
+  try {
+    s.settings = await api.skipVersion(version)
+  } catch (e) {
+    fail(e)
+  }
+}
+async function openUrl(kind: 'project' | 'releases') {
+  try {
+    await api.openUrl(kind)
+  } catch (e) {
+    fail(e)
+  }
 }
 async function saveDraft() {
   s.error = ''
   try {
-    s.settings = await api.saveSettings({ ...draft, theme: theme.value })
+    s.settings = await api.saveSettings({ ...currentInput(), ...draft })
     loadDraft()
     s.notice = '設定已儲存。'
     await checkTools()
@@ -308,6 +389,7 @@ const outcomeLabel: Record<string, string> = { success: '完成', partial: '部�
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && s.toolDialog) closeDialog()
+  else if (e.key === 'Escape' && s.release && s.phase !== 'update') closeRelease()
 }
 
 onMounted(async () => {
@@ -320,6 +402,7 @@ onMounted(async () => {
   s.ready = true
   await nextTick()
   await api.ready()
+  startupCheck()
 })
 </script>
 
@@ -355,13 +438,17 @@ onMounted(async () => {
       <section v-if="s.page === 'settings'" aria-labelledby="settings-title">
         <div class="heading">
           <div><h2 id="settings-title">設定</h2><p class="muted">外觀、工具與匯出位置</p></div>
-          <button @click="s.page = 'main'">返回影片</button>
         </div>
         <div class="settings-grid">
           <div class="panel">
             <h3>外觀</h3>
             <label class="setting"><span>淺色模式</span><input type="checkbox" :checked="theme === 'light'" :disabled="blocked" @change="setTheme(($event.target as HTMLInputElement).checked)" /></label>
-            <div class="setting"><span>主色</span><span class="accent">● 藍色</span></div>
+            <div class="setting">
+              <span id="accent-label">主色</span>
+              <span class="swatches" role="radiogroup" aria-labelledby="accent-label">
+                <button v-for="a in accents" :key="a[0]" class="swatch" role="radio" :aria-checked="accent === a[0]" :aria-label="a[1]" :title="a[1]" :style="{ background: a[2] }" :disabled="blocked" @click="setAccent(a[0])"></button>
+              </span>
+            </div>
           </div>
           <div class="panel">
             <h3>連線方式</h3>
@@ -395,7 +482,17 @@ onMounted(async () => {
               <span class="muted">記錄存放在程式旁的 log 資料夾，不會自動上傳；裝置序號、網址參數與個人路徑會遮蔽。</span>
               <button :disabled="!s.logPath" @click="openFolder('log')">開啟日誌資料夾</button>
             </div>
-            <small>版本 {{ s.version }}</small>
+          </div>
+          <div class="panel full">
+            <h3>更新</h3>
+            <label class="setting"><span>啟動時檢查更新</span><input type="checkbox" :checked="s.settings?.CheckUpdates ?? true" :disabled="blocked" @change="setCheckUpdates(($event.target as HTMLInputElement).checked)" /></label>
+            <div class="setting">
+              <span>目前版本 {{ s.version.split('+')[0] }}<span v-if="s.updateResult" class="muted" role="status"> · {{ s.updateResult }}</span></span>
+              <span class="actions">
+                <button @click="openUrl('project')">GitHub 專案頁面</button>
+                <button :disabled="s.checking" @click="checkUpdate">{{ s.checking ? '檢查中…' : '立即檢查' }}</button>
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -491,7 +588,7 @@ onMounted(async () => {
       </section>
 
       <div class="footer">
-        <span>{{ s.serial ? '裝置已連線' : '尚未連線' }} · {{ { idle: '待命', connect: '連線中', scan: '掃描中', export: '匯出中', download: '下載工具中', recover: '清理暫存中' }[s.phase] }}</span>
+        <span>{{ s.serial ? '裝置已連線' : '尚未連線' }} · {{ { idle: '待命', connect: '連線中', scan: '掃描中', export: '匯出中', download: '下載工具中', recover: '清理暫存中', update: '更新中' }[s.phase] }}</span>
         <span class="spacer"></span>
         <button class="quiet" :aria-expanded="s.showLogs" @click="s.showLogs = !s.showLogs">{{ s.showLogs ? '收合' : '查看' }}詳細記錄</button>
       </div>
@@ -517,6 +614,24 @@ onMounted(async () => {
             <button @click="closeDialog">{{ s.phase === 'download' ? '取消下載' : '稍後' }}</button>
             <button v-if="s.phase !== 'download'" @click="manualTools">指定已有工具</button>
             <button v-if="s.phase !== 'download'" class="primary" @click="download">{{ s.downloadError ? '重試下載' : '下載並設定' }}</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="s.release" class="scrim">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="release-title">
+          <h3 id="release-title">有新版本 {{ s.release.version }}</h3>
+          <pre class="notes" tabindex="0" aria-label="版本說明">{{ s.release.notes || '這個版本沒有附上說明。' }}</pre>
+          <template v-if="s.phase === 'update'">
+            <progress aria-label="更新下載進度" :max="s.download?.total || 1" :value="s.download?.bytes ?? 0"></progress>
+            <small>{{ s.download?.stage ?? '準備中' }}<template v-if="s.download"> · {{ mb(s.download.bytes) }} / {{ mb(s.download.total) }}</template></small>
+          </template>
+          <p v-else-if="busy" class="warning">匯出完成後才能更新。</p>
+          <p v-if="s.updateError" class="warning" role="alert">{{ s.updateError }}</p>
+          <div v-if="s.phase !== 'update'" class="actions end">
+            <button v-if="s.updateError" @click="openUrl('releases')">開啟 Release 頁面</button>
+            <button @click="closeRelease">稍後</button>
+            <button @click="skipRelease">略過此版本</button>
+            <button class="primary" :disabled="busy" @click="installUpdate">{{ s.updateError ? '重試更新' : '更新' }}</button>
           </div>
         </section>
       </div>

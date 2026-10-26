@@ -10,6 +10,7 @@ pub mod scan;
 pub mod settings;
 pub mod storage;
 pub mod tools;
+pub mod update;
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};

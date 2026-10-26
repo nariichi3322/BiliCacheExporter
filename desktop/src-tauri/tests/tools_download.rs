@@ -175,7 +175,16 @@ fn portable_relative_tool_paths_survive_moving_the_folder() {
     let s = h.app.snapshot().settings;
     let absolute = a.join("tools").join("adb").join("fake-adb.exe").to_string_lossy().into_owned();
     h.app
-        .save_settings(bili_core::app::SettingsInput { adb: absolute, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme })
+        .save_settings(bili_core::app::SettingsInput {
+            adb: absolute,
+            ffmpeg: s.ffmpeg,
+            ffprobe: s.ffprobe,
+            output: s.output,
+            temp: s.temp,
+            theme: s.theme,
+            accent: s.accent,
+            check_updates: true,
+        })
         .unwrap();
     assert_eq!(h.app.snapshot().settings.adb, r"tools\adb\fake-adb.exe", "stored relative to the program folder");
     drop(h);

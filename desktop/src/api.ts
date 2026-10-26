@@ -10,6 +10,9 @@ export interface Settings {
   Output: string
   Temp: string
   Theme: 'dark' | 'light'
+  Accent: string
+  CheckUpdates: boolean
+  SkipVersion: string
   [extra: string]: unknown
 }
 
@@ -51,7 +54,8 @@ export interface BatchProgress { id: number; index: number; total: number; compl
 export interface Summary { total: number; successful: number; partial: number; failed: number; cancelled: number; notStarted: number }
 export interface DownloadProgress { name: string; stage: string; bytes: number; total: number }
 export interface CmdError { message: string; cancelled: boolean; missing: string[] }
-export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string }
+export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string; accent: string; checkUpdates: boolean }
+export interface Release { version: string; notes: string; newer: boolean }
 
 export type AppEvent =
   | { type: 'log'; line: string }
@@ -74,6 +78,10 @@ export const api = {
   recoverJobs: () => invoke<[number, number]>('recover_jobs'),
   downloadTools: (names: string[]) => invoke<Settings>('download_tools', { names }),
   openFolder: (kind: 'log' | 'output') => invoke<void>('open_folder', { kind }),
+  checkUpdate: () => invoke<Release>('check_update'),
+  installUpdate: (version: string) => invoke<void>('install_update', { version }),
+  skipVersion: (version: string) => invoke<Settings>('skip_version', { version }),
+  openUrl: (kind: 'project' | 'releases') => invoke<void>('open_url', { kind }),
   onEvent: (handler: (e: AppEvent) => void) => listen<AppEvent>('app-event', e => handler(e.payload)),
 }
 

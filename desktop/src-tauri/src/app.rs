@@ -5,6 +5,7 @@ use crate::scan::{Adb, CacheItem, Device};
 use crate::settings::{self, Settings};
 use crate::storage::{Storage, TemporaryJob};
 use crate::tools::{self, check_tool, DownloadProgress, Fetch, Kind, Package, PACKAGES};
+use crate::update::{self, Release};
 use crate::{Cancel, Error};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -68,6 +69,8 @@ pub struct SettingsInput {
     pub output: String,
     pub temp: String,
     pub theme: String,
+    pub accent: String,
+    pub check_updates: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -148,6 +151,7 @@ impl App {
             },
         };
         log.log(&format!("BiliCacheExporter {}", crate::VERSION));
+        update::clean_old(&dir);
         App {
             dir,
             log,
@@ -223,6 +227,8 @@ impl App {
         s.output = input.output.trim().into();
         s.temp = input.temp.trim().into();
         s.theme = if input.theme == "light" { "light".into() } else { "dark".into() };
+        s.accent = settings::accent(&input.accent);
+        s.check_updates = input.check_updates;
         settings::save(&self.dir, &s)?;
         self.state.lock().unwrap().settings = Some(s.clone());
         Ok(s)
@@ -448,6 +454,30 @@ impl App {
         Ok((cleaned, kept))
     }
 
+    /// Asks GitHub for the latest release; works while busy since it changes nothing.
+    pub fn check_update(&self) -> Out<Release> {
+        Ok(update::check(&*self.fetch, crate::VERSION)?)
+    }
+
+    /// Replaces `exe` with `version`; refused while a scan or export runs. The caller restarts the app.
+    pub fn install_update(&self, exe: &Path, version: &str) -> Out<()> {
+        self.writable()?;
+        let (_busy, cancel) = self.begin().map_err(|_| err("匯出完成後才能更新。"))?;
+        update::install(exe, version, &*self.fetch, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
+        self.log.log(&format!("已更新到 {version}，重新啟動中。"));
+        Ok(())
+    }
+
+    /// Startup checks stay quiet about this version; manual checks still show it.
+    pub fn skip_version(&self, version: String) -> Out<Settings> {
+        self.writable()?;
+        let mut s = self.settings()?;
+        s.skip_version = version;
+        settings::save(&self.dir, &s)?;
+        self.state.lock().unwrap().settings = Some(s.clone());
+        Ok(s)
+    }
+
     /// Called when the app exits; see [`tools::stop_own_adb`].
     pub fn stop_own_adb(&self) {
         tools::stop_own_adb(&self.dir, &self.runner)
@@ -461,6 +491,8 @@ impl App {
         for name in &names {
             let package = PACKAGES.iter().find(|p| p.name == name).ok_or_else(|| err(format!("未知的工具：{name}")))?;
             let folder = tools::install(&self.dir, &self.runner, package, &*self.fetch, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
+            // A download takes minutes; settings saved meanwhile (a skipped version) must not be overwritten.
+            s = self.settings()?;
             let rel = |exe: &str| settings::portable(&self.dir, &folder.join(exe).to_string_lossy());
             if package.name == "adb" {
                 s.adb = rel("adb.exe");

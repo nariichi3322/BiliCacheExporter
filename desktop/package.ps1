@@ -109,6 +109,7 @@ try {
         "- 閒置 8 秒、未連線：應用程序 Working Set $(& $mib $appWs) MiB；含 WebView2 子程序共 $($procs.Count) 個程序，Working Set 合計 $(& $mib $treeWs) MiB、Private 合計 $(& $mib $treePrivate) MiB。WebView2 子程序共享系統元件，合計值會重複計算共享頁面。",
         "- WebView2 缺少（以空的 WEBVIEW2_BROWSER_EXECUTABLE_FOLDER 模擬）：顯示原生「需要安裝 WebView2」對話框，未啟動 WebView 子程序；按「否」以代碼 2 結束且未寫入任何檔案（「是」只開啟 Microsoft 官方頁，未自動化點擊）。不是乾淨虛擬機上的實測。",
         "- 正式包整合流程：$(@($e2eResults.results | Where-Object ok).Count)/$(@($e2eResults.results).Count) PASS（假手機＋真實 FFmpeg/FFprobe，DPR $($e2eResults.devicePixelRatio)）。截圖在 evidence/。",
+        '- 程式內更新：本機假 GitHub（BILI_UPDATE_SOURCE 指向 127.0.0.1）提供 99.0.0，內容是本次 EXE 加上標記位元組；驗證提示、下載、SHA-256、替換、重新啟動、.old 清理與 settings.json／tools 不變（含在上一行的整合流程結果）。新舊 EXE 版本號相同，未驗證跨版本號的實際升級。',
         $(if ($WithDownload) { '- 本次包含正式包內的真實 ADB 下載、SHA-256 核對與啟用。' } else { '- 本次未在正式包內執行真實下載（加 -WithDownload 才會）。' }),
         '- 未驗證：真手機、實際播放、封面外觀與檔案總管縮圖（工作票 09，由使用者確認）。'
     )

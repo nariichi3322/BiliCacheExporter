@@ -104,16 +104,18 @@ pub fn check_tool(runner: &Runner, kind: Kind, path: &Path) -> Res<String> {
 }
 
 pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: &mut dyn FnMut(u64)) -> Res<()> {
-    if !url.starts_with("https://") {
+    // Plain HTTP only reaches the local server of the packaged update check (see update::SOURCE_ENV).
+    let local = url.starts_with("http://127.0.0.1:");
+    if !url.starts_with("https://") && !local {
         return fail("只接受 HTTPS 下載來源。");
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .https_only(true)
+        .https_only(!local)
         .timeout_connect(Some(std::time::Duration::from_secs(30)))
         .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
         .build()
         .into();
-    let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試，或改為手動指定工具。")))?;
+    let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試。")))?;
     let mut reader = response.into_body().into_reader();
     let mut file = std::fs::File::create(dest).map_err(|e| Error::Failed(format!("無法寫入下載暫存：{e}")))?;
     let mut buffer = vec![0u8; 256 * 1024];
@@ -224,7 +226,7 @@ fn install_staged(
 }
 
 /// Antivirus scans and just-exited tool processes briefly hold fresh executables open on Windows.
-fn rename_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn rename_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     let mut attempt = 0;
     loop {
         match std::fs::rename(from, to) {
