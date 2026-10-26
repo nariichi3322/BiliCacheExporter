@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
-import { api, errorOf, mb, type AppEvent, type BatchProgress, type CacheItem, type Device, type DownloadProgress, type ItemResult, type Package, type Settings, type Summary, type ToolStatus } from './api'
+import { api, errorOf, mb, type AppEvent, type BatchProgress, type CacheItem, type Device, type DownloadProgress, type ItemResult, type Package, type Release, type Settings, type Summary, type ToolStatus } from './api'
 
 type Phase = 'idle' | 'connect' | 'scan' | 'export' | 'download' | 'recover'
 
@@ -36,6 +36,7 @@ const s = reactive({
   recoverable: 0,
   tools: [] as ToolStatus[],
   updateResult: '',
+  release: null as Release | null,
   checking: false,
 })
 const draft = reactive({ adb: '', ffmpeg: '', ffprobe: '', output: '', temp: '' })
@@ -230,10 +231,30 @@ async function checkUpdate() {
   try {
     const r = await api.checkUpdate()
     s.updateResult = r.newer ? `發現新版本 ${r.version}` : '已是最新版本'
+    if (r.newer) s.release = r
   } catch (e) {
     s.updateResult = errorOf(e).message
   } finally {
     s.checking = false
+  }
+}
+// Startup check: only a newer, not skipped release is shown; no update or an error stays silent.
+async function startupCheck() {
+  if (!s.settings?.CheckUpdates) return
+  try {
+    const r = await api.checkUpdate()
+    if (r.newer && r.version !== s.settings.SkipVersion) s.release = r
+  } catch {
+    // Offline use must not be interrupted.
+  }
+}
+async function skipRelease() {
+  const version = s.release!.version
+  s.release = null
+  try {
+    s.settings = await api.skipVersion(version)
+  } catch (e) {
+    fail(e)
   }
 }
 async function openUrl(kind: 'project' | 'releases') {
@@ -348,6 +369,7 @@ const outcomeLabel: Record<string, string> = { success: '完成', partial: '部�
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && s.toolDialog) closeDialog()
+  else if (e.key === 'Escape' && s.release) s.release = null
 }
 
 onMounted(async () => {
@@ -360,6 +382,7 @@ onMounted(async () => {
   s.ready = true
   await nextTick()
   await api.ready()
+  startupCheck()
 })
 </script>
 
@@ -571,6 +594,17 @@ onMounted(async () => {
             <button @click="closeDialog">{{ s.phase === 'download' ? '取消下載' : '稍後' }}</button>
             <button v-if="s.phase !== 'download'" @click="manualTools">指定已有工具</button>
             <button v-if="s.phase !== 'download'" class="primary" @click="download">{{ s.downloadError ? '重試下載' : '下載並設定' }}</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="s.release" class="scrim">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="release-title">
+          <h3 id="release-title">有新版本 {{ s.release.version }}</h3>
+          <pre class="notes" tabindex="0" aria-label="版本說明">{{ s.release.notes || '這個版本沒有附上說明。' }}</pre>
+          <div class="actions end">
+            <button @click="s.release = null">稍後</button>
+            <button @click="skipRelease">略過此版本</button>
+            <button class="primary" disabled>更新</button>
           </div>
         </section>
       </div>

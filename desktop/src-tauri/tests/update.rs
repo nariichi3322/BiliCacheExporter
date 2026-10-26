@@ -69,3 +69,13 @@ fn accent_defaults_to_blue_and_unknown_values_fall_back() {
     assert!(std::fs::read_to_string(dir.join("settings.json")).unwrap().contains(r#""Accent": "pink""#));
     assert_eq!(h.app.save_settings(input("#123456")).unwrap().accent, "blue");
 }
+
+#[test]
+fn skipped_version_is_saved_and_defaults_empty() {
+    let dir = tempdir();
+    let h = harness_in(dir.clone(), Phone::one_device(), no_network());
+    assert_eq!(h.app.snapshot().settings.skip_version, "");
+    assert_eq!(h.app.skip_version("2.1.0".into()).unwrap().skip_version, "2.1.0");
+    drop(h);
+    assert_eq!(harness_in(dir, Phone::one_device(), no_network()).app.snapshot().settings.skip_version, "2.1.0");
+}

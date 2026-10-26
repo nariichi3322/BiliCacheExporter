@@ -96,6 +96,12 @@ async fn check_update(s: State<'_, Shared>) -> Out<Release> {
     blocking(move || app.check_update()).await
 }
 
+#[tauri::command]
+async fn skip_version(s: State<'_, Shared>, version: String) -> Out<Settings> {
+    let app = s.app.clone();
+    blocking(move || app.skip_version(version)).await
+}
+
 /// Opens only the project's own GitHub pages; the UI cannot pass arbitrary URLs.
 #[tauri::command]
 fn open_url(kind: String) -> Out<()> {
@@ -193,6 +199,7 @@ fn main() {
             download_tools,
             open_folder,
             check_update,
+            skip_version,
             open_url
         ])
         .build(tauri::generate_context!());

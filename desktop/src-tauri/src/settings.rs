@@ -27,6 +27,8 @@ pub struct Settings {
     #[serde(default = "yes")]
     pub check_updates: bool,
     #[serde(default)]
+    pub skip_version: String,
+    #[serde(default)]
     pub settings_version: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -68,6 +70,7 @@ impl Settings {
             theme: dark(),
             accent: blue(),
             check_updates: true,
+            skip_version: String::new(),
             settings_version: VERSION,
             extra: Map::new(),
         }

@@ -12,6 +12,7 @@ export interface Settings {
   Theme: 'dark' | 'light'
   Accent: string
   CheckUpdates: boolean
+  SkipVersion: string
   [extra: string]: unknown
 }
 
@@ -78,6 +79,7 @@ export const api = {
   downloadTools: (names: string[]) => invoke<Settings>('download_tools', { names }),
   openFolder: (kind: 'log' | 'output') => invoke<void>('open_folder', { kind }),
   checkUpdate: () => invoke<Release>('check_update'),
+  skipVersion: (version: string) => invoke<Settings>('skip_version', { version }),
   openUrl: (kind: 'project' | 'releases') => invoke<void>('open_url', { kind }),
   onEvent: (handler: (e: AppEvent) => void) => listen<AppEvent>('app-event', e => handler(e.payload)),
 }

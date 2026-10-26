@@ -458,6 +458,16 @@ impl App {
         Ok(update::check(&*self.fetch, crate::VERSION)?)
     }
 
+    /// Startup checks stay quiet about this version; manual checks still show it.
+    pub fn skip_version(&self, version: String) -> Out<Settings> {
+        self.writable()?;
+        let mut s = self.settings()?;
+        s.skip_version = version;
+        settings::save(&self.dir, &s)?;
+        self.state.lock().unwrap().settings = Some(s.clone());
+        Ok(s)
+    }
+
     /// Called when the app exits; see [`tools::stop_own_adb`].
     pub fn stop_own_adb(&self) {
         tools::stop_own_adb(&self.dir, &self.runner)
