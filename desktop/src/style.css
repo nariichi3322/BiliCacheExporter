@@ -4,11 +4,22 @@
   --blue: #6aa8ff; --button: #2868da; --good: #7ee0b5; --warn: #ffd18c; --danger: #ff9a9a;
   color-scheme: dark;
 }
+:root[data-accent="pink"] { --blue: #ff8fb3; --button: #d6336c; }
+:root[data-accent="green"] { --blue: #5fd39a; --button: #187a4c; }
+:root[data-accent="purple"] { --blue: #b49cff; --button: #7048e8; }
+:root[data-accent="orange"] { --blue: #ffa94d; --button: #c2410c; }
+:root[data-accent="teal"] { --blue: #4fd1c5; --button: #0f7c80; }
 :root[data-theme="light"] {
   --bg: #f4f7fc; --surface: #fff; --raised: #e9eff8; --line: #c9d4e4; --text: #17263d; --muted: #4d5f79;
   --blue: #245fc0; --button: #245fc0; --good: #17744f; --warn: #875100; --danger: #b42318;
   color-scheme: light;
 }
+/* Every accent keeps white button text and accent text at 4.5:1 or better in both themes. */
+:root[data-theme="light"][data-accent="pink"] { --blue: #c2255c; --button: #c2255c; }
+:root[data-theme="light"][data-accent="green"] { --blue: #17744f; --button: #17744f; }
+:root[data-theme="light"][data-accent="purple"] { --blue: #6741d9; --button: #6741d9; }
+:root[data-theme="light"][data-accent="orange"] { --blue: #b23c0a; --button: #b23c0a; }
+:root[data-theme="light"][data-accent="teal"] { --blue: #0b6e72; --button: #0b6e72; }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 "Segoe UI", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif; }
 button, input, select { font: inherit; color: inherit; }
@@ -33,6 +44,9 @@ small { color: var(--muted); }
 .good { color: var(--good); }
 .warning { color: var(--warn); }
 .accent { color: var(--blue); }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 26px; height: 26px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch[aria-checked="true"] { outline: 2px solid var(--text); outline-offset: 2px; }
 .spacer { flex: 1; }
 .actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .actions.end { justify-content: flex-end; display: flex; }

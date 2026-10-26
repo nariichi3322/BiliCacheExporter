@@ -10,6 +10,7 @@ export interface Settings {
   Output: string
   Temp: string
   Theme: 'dark' | 'light'
+  Accent: string
   CheckUpdates: boolean
   [extra: string]: unknown
 }
@@ -52,7 +53,7 @@ export interface BatchProgress { id: number; index: number; total: number; compl
 export interface Summary { total: number; successful: number; partial: number; failed: number; cancelled: number; notStarted: number }
 export interface DownloadProgress { name: string; stage: string; bytes: number; total: number }
 export interface CmdError { message: string; cancelled: boolean; missing: string[] }
-export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string; checkUpdates: boolean }
+export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string; accent: string; checkUpdates: boolean }
 export interface Release { version: string; notes: string; newer: boolean }
 
 export type AppEvent =

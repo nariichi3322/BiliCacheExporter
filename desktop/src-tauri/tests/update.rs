@@ -1,4 +1,4 @@
-//! Update check against a fake GitHub API: the network is replaced by canned responses.
+//! Update check against a fake GitHub API (network replaced by canned responses) and the related settings.
 mod common;
 
 use bili_core::tools::Fetch;
@@ -46,4 +46,26 @@ fn update_check_setting_defaults_on_and_survives_old_files() {
     std::fs::write(dir.join("settings.json"), r#"{"Theme":"light"}"#).unwrap();
     let h = harness_in(dir, Phone::one_device(), no_network());
     assert!(h.app.snapshot().settings.check_updates);
+}
+
+#[test]
+fn accent_defaults_to_blue_and_unknown_values_fall_back() {
+    let dir = tempdir();
+    std::fs::write(dir.join("settings.json"), r#"{"Accent":"rainbow"}"#).unwrap();
+    let h = harness_in(dir.clone(), Phone::one_device(), no_network());
+    assert_eq!(h.app.snapshot().settings.accent, "blue");
+    let s = h.app.snapshot().settings;
+    let input = |accent: &str| bili_core::app::SettingsInput {
+        adb: s.adb.clone(),
+        ffmpeg: s.ffmpeg.clone(),
+        ffprobe: s.ffprobe.clone(),
+        output: s.output.clone(),
+        temp: s.temp.clone(),
+        theme: s.theme.clone(),
+        accent: accent.into(),
+        check_updates: true,
+    };
+    assert_eq!(h.app.save_settings(input("pink")).unwrap().accent, "pink");
+    assert!(std::fs::read_to_string(dir.join("settings.json")).unwrap().contains(r#""Accent": "pink""#));
+    assert_eq!(h.app.save_settings(input("#123456")).unwrap().accent, "blue");
 }

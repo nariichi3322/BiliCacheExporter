@@ -22,6 +22,8 @@ pub struct Settings {
     pub temp: String,
     #[serde(default = "dark")]
     pub theme: String,
+    #[serde(default = "blue")]
+    pub accent: String,
     #[serde(default = "yes")]
     pub check_updates: bool,
     #[serde(default)]
@@ -32,6 +34,22 @@ pub struct Settings {
 
 fn dark() -> String {
     "dark".into()
+}
+
+/// Preset accent colours; the palette itself lives in the stylesheet.
+pub const ACCENTS: &[&str] = &["blue", "pink", "green", "purple", "orange", "teal"];
+
+fn blue() -> String {
+    "blue".into()
+}
+
+/// Unknown or missing values fall back to the default blue.
+pub fn accent(value: &str) -> String {
+    if ACCENTS.contains(&value) {
+        value.into()
+    } else {
+        blue()
+    }
 }
 
 fn yes() -> bool {
@@ -48,6 +66,7 @@ impl Settings {
             output: videos,
             temp: String::new(),
             theme: dark(),
+            accent: blue(),
             check_updates: true,
             settings_version: VERSION,
             extra: Map::new(),
@@ -71,6 +90,7 @@ pub fn load(dir: &Path) -> Res<Settings> {
     if settings.theme != "light" {
         settings.theme = dark();
     }
+    settings.accent = accent(&settings.accent);
     Ok(settings)
 }
 

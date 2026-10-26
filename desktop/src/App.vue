@@ -44,6 +44,10 @@ const scanning = computed(() => s.phase === 'connect' || s.phase === 'scan')
 const blocked = computed(() => !!s.storageError || !!s.settingsError)
 const theme = computed(() => s.settings?.Theme ?? 'dark')
 watch(theme, t => { document.documentElement.dataset.theme = t }, { immediate: true })
+const accent = computed(() => s.settings?.Accent ?? 'blue')
+watch(accent, a => { document.documentElement.dataset.accent = a }, { immediate: true })
+// Swatch colours match each preset's dark-mode button colour in style.css.
+const accents = [['blue', '藍色', '#2868da'], ['pink', 'B 站粉', '#d6336c'], ['green', '綠色', '#187a4c'], ['purple', '紫色', '#7048e8'], ['orange', '橘色', '#c2410c'], ['teal', '青色', '#0f7c80']] as const
 
 function variantOf(item: CacheItem): number | null {
   return s.choices[item.id] ?? item.autoVariant ?? null
@@ -203,7 +207,15 @@ async function setTheme(light: boolean) {
 }
 function currentInput() {
   const t = s.settings!
-  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, checkUpdates: t.CheckUpdates }
+  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, accent: t.Accent, checkUpdates: t.CheckUpdates }
+}
+async function setAccent(value: string) {
+  if (!s.settings) return
+  try {
+    s.settings = await api.saveSettings({ ...currentInput(), accent: value })
+  } catch (e) {
+    fail(e)
+  }
 }
 async function setCheckUpdates(on: boolean) {
   if (!s.settings) return
@@ -388,7 +400,12 @@ onMounted(async () => {
           <div class="panel">
             <h3>外觀</h3>
             <label class="setting"><span>淺色模式</span><input type="checkbox" :checked="theme === 'light'" :disabled="blocked" @change="setTheme(($event.target as HTMLInputElement).checked)" /></label>
-            <div class="setting"><span>主色</span><span class="accent">● 藍色</span></div>
+            <div class="setting">
+              <span id="accent-label">主色</span>
+              <span class="swatches" role="radiogroup" aria-labelledby="accent-label">
+                <button v-for="a in accents" :key="a[0]" class="swatch" role="radio" :aria-checked="accent === a[0]" :aria-label="a[1]" :title="a[1]" :style="{ background: a[2] }" :disabled="blocked" @click="setAccent(a[0])"></button>
+              </span>
+            </div>
           </div>
           <div class="panel">
             <h3>連線方式</h3>

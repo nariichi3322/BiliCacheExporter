@@ -18,7 +18,7 @@ fn sel(id: usize) -> Selection {
 
 fn input(h: &Harness) -> SettingsInput {
     let s = h.app.snapshot().settings;
-    SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme, check_updates: true }
+    SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme, accent: s.accent, check_updates: true }
 }
 
 fn results(h: &Harness) -> Vec<(usize, Outcome, String)> {
@@ -68,6 +68,7 @@ fn corrupt_settings_are_reported_not_replaced() {
         output: "C:\\x".into(),
         temp: String::new(),
         theme: "dark".into(),
+        accent: "blue".into(),
         check_updates: true,
     };
     assert!(h.app.save_settings(i).is_err());
@@ -93,6 +94,7 @@ fn unwritable_folder_blocks_with_actionable_message() {
             output: s.output,
             temp: s.temp,
             theme: "light".into(),
+            accent: "blue".into(),
             check_updates: true,
         })
         .unwrap_err();

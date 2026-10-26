@@ -30,7 +30,7 @@ const items = [
 
 function snapshot(extra: Partial<Snapshot> = {}): Snapshot {
   return {
-    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark', CheckUpdates: true },
+    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark', Accent: 'blue', CheckUpdates: true },
     settingsError: null, storageError: null, logPath: 'log', devices: [], serial: null, items: [], generation: 0, recoverableJobs: 0,
     packages: [{ name: 'adb', title: 'Android SDK Platform-Tools（ADB）', version: '37.0.1', publisher: 'Google', url: 'https://x', sha256: 'h', size: 8044989, license: 'L' }],
     ...extra,
@@ -48,7 +48,7 @@ const connected = { devices: [{ serial: 'S1', state: 'device', detail: 'model:SM
 
 beforeEach(() => {
   calls.length = 0
-  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme, CheckUpdates: input.checkUpdates }) }
+  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme, Accent: input.accent, CheckUpdates: input.checkUpdates }) }
   document.body.innerHTML = ''
 })
 
@@ -122,6 +122,22 @@ describe('compact list', () => {
     expect(w.text()).toContain('輸出資料夾')
     await w.findAll('button').find(b => b.text().includes('詳細記錄'))!.trigger('click')
     expect(w.find('pre.logs').exists()).toBe(true)
+  })
+
+  it('applies and saves a preset accent', async () => {
+    handlers.check_tools = () => []
+    const w = await start()
+    expect(document.documentElement.dataset.accent).toBe('blue')
+    await w.findAll('button').find(b => b.text().includes('設定'))!.trigger('click')
+    await flushPromises()
+    const swatches = w.findAll('[role=radiogroup] [role=radio]')
+    expect(swatches.map(b => b.attributes('aria-label'))).toEqual(['藍色', 'B 站粉', '綠色', '紫色', '橘色', '青色'])
+    expect(swatches[0].attributes('aria-checked')).toBe('true')
+    await swatches[1].trigger('click')
+    await flushPromises()
+    expect((calls.find(c => c.cmd === 'save_settings')!.args as any).input).toMatchObject({ accent: 'pink', theme: 'dark' })
+    expect(document.documentElement.dataset.accent).toBe('pink')
+    expect(w.get('[aria-label="B 站粉"]').attributes('aria-checked')).toBe('true')
   })
 
   it('settings has one way back and an update card', async () => {

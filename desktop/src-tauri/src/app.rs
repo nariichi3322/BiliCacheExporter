@@ -69,6 +69,7 @@ pub struct SettingsInput {
     pub output: String,
     pub temp: String,
     pub theme: String,
+    pub accent: String,
     pub check_updates: bool,
 }
 
@@ -225,6 +226,7 @@ impl App {
         s.output = input.output.trim().into();
         s.temp = input.temp.trim().into();
         s.theme = if input.theme == "light" { "light".into() } else { "dark".into() };
+        s.accent = settings::accent(&input.accent);
         s.check_updates = input.check_updates;
         settings::save(&self.dir, &s)?;
         self.state.lock().unwrap().settings = Some(s.clone());

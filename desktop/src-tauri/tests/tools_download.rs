@@ -182,6 +182,7 @@ fn portable_relative_tool_paths_survive_moving_the_folder() {
             output: s.output,
             temp: s.temp,
             theme: s.theme,
+            accent: s.accent,
             check_updates: true,
         })
         .unwrap();
