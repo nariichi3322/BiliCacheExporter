@@ -314,7 +314,8 @@ const tabTo = async label => {
 check(await tabTo('設定'), 'Keyboard reaches 設定')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
 check(await app.waitFor("document.body.innerText.includes('必要工具與位置')"), 'Settings opens by keyboard')
-check(await tabTo('返回影片'), 'Keyboard reaches 返回影片')
+// The header toggle keeps focus and now reads 返回影片 (the settings page has no second back button).
+check(await app.eval("document.activeElement?.textContent?.trim() === '返回影片'"), 'Keyboard focus stays on the toggle, now 返回影片')
 await app.key('Enter', 'Enter', 13, String.fromCharCode(13))
 check(await app.waitFor("document.querySelector('.device') !== null && !document.body.innerText.includes('必要工具與位置')"), 'Returns to the list by keyboard')
 check(await app.eval("document.documentElement.dataset.theme") === 'light', 'Theme persists across restart')
@@ -434,7 +435,7 @@ await app.close()
     await sleep(200)
     try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page') } catch {}
   }
-  if (page) {
+  if (page && newPid) {
     const fresh = await attach(page, { pid: newPid, exe: target }, port)
     check(await fresh.waitFor("document.querySelector('[role=dialog]')?.innerText.includes('有新版本 99.0.0')"), 'Restarted app is operable and checks again at startup')
     await fresh.shot('15-after-update-dark')

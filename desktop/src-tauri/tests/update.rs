@@ -211,3 +211,12 @@ fn update_is_refused_while_busy() {
     });
     assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"old exe");
 }
+
+#[test]
+fn packages_zipped_with_backslash_separators_also_install() {
+    let dir = installed();
+    let zipped = zip_bytes(&[(r"BiliCacheExporter-win-x64\BiliCacheExporter.exe", b"new exe")]);
+    let h = harness_in(dir.clone(), Phone::one_device(), release(zipped.clone(), zipped));
+    h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
+    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
+}

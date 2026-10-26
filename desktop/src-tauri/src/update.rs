@@ -147,7 +147,11 @@ fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, canc
         return fail("下載檔案的 SHA-256 與發行記錄不符，已拒絕安裝。請重試或改為手動下載。");
     }
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| Error::Failed(format!("壓縮檔無法讀取：{e}")))?;
-    let mut entry = zip.by_name(EXE_IN_ASSET).map_err(|_| Error::Failed(format!("壓縮檔缺少 {EXE_IN_ASSET}。")))?;
+    // Windows PowerShell 5's Compress-Archive writes `\` separators; pwsh (the release workflow) writes `/`.
+    let index = (0..zip.len())
+        .find(|&i| zip.name_for_index(i).is_some_and(|n| n.is_ok_and(|n| n.replace('\\', "/") == EXE_IN_ASSET)))
+        .ok_or_else(|| Error::Failed(format!("壓縮檔缺少 {EXE_IN_ASSET}。")))?;
+    let mut entry = zip.by_index(index).map_err(|e| Error::Failed(format!("壓縮檔無法讀取：{e}")))?;
     let fresh = staging.join("new.exe");
     let mut file = std::fs::File::create(&fresh)?;
     std::io::copy(&mut entry, &mut file).map_err(|e| Error::Failed(format!("解壓縮寫入失敗（磁碟空間或權限）：{e}")))?;
