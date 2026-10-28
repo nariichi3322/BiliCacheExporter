@@ -54,6 +54,8 @@ pub struct CacheItem {
     pub quality: String,
     pub cover: Option<String>,
     pub has_cover: bool,
+    /// Drawable comments in `remote`'s danmaku.xml; 0 when there is none, it is disabled or unreadable.
+    pub danmaku: usize,
     pub inventory: Vec<FileInfo>,
     /// Which app's cache the row came from, e.g. "中國版（tv.danmaku.bili）".
     pub source: String,
@@ -306,6 +308,13 @@ impl Adb<'_> {
                 Err(e) => self.runner.log(&format!("封面讀取失敗：{e}")),
             }
         }
+        if has(&format!("{remote}/danmaku.xml")) {
+            match self.shell(serial, &format!("cat {}", quote(&format!("{remote}/danmaku.xml"))), cancel) {
+                Ok(xml) => item.danmaku = crate::danmaku::count(&xml),
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
+                Err(e) => self.runner.log(&format!("彈幕讀取失敗：{e}")),
+            }
+        }
         Ok(())
     }
 
@@ -377,7 +386,7 @@ fn merge(into: &mut CacheItem, other: CacheItem, label: &str) {
     into.source = format!("{}、{}", into.source, other.source);
     if !into.has_cover && other.has_cover {
         // Export reads the cover from `remote`, so point it at the app that has one.
-        (into.remote, into.cover, into.has_cover) = (other.remote, other.cover, true);
+        (into.remote, into.cover, into.has_cover, into.danmaku) = (other.remote, other.cover, true, other.danmaku);
     }
     if into.variants.iter().any(|v| v.issue.is_empty()) {
         into.issue.clear();

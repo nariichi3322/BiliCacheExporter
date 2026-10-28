@@ -6,14 +6,14 @@ use bili_core::app::{App, Event, Selection, SettingsInput};
 use bili_core::batch::{Outcome, Summary};
 use bili_core::export::{export, Request};
 use bili_core::log::Logger;
-use bili_core::scan::{Adb, CHINA_ROOT, ROOT};
+use bili_core::scan::{Adb, CacheItem, CHINA_ROOT, ROOT};
 use bili_core::storage::Storage;
 use bili_core::Cancel;
 use common::*;
 use std::path::Path;
 
 fn sel(id: usize) -> Selection {
-    Selection { id, variant: None }
+    Selection { id, variant: None, danmaku: false }
 }
 
 fn input(h: &Harness) -> SettingsInput {
@@ -282,7 +282,7 @@ fn china_app_is_scanned_and_same_video_in_both_apps_is_one_row() {
     assert_eq!(h.events.lock().unwrap().iter().filter(|e| matches!(e, Event::Item { item } if item.id == merged.id)).count(), 2, "merged row is re-sent");
     let q80 = merged.variants.iter().position(|v| v.quality.starts_with("80")).unwrap();
     assert!(merged.variants[q80].video.starts_with(ROOT));
-    let summary = h.app.export(r.generation, vec![Selection { id: merged.id, variant: Some(q80) }]).unwrap();
+    let summary = h.app.export(r.generation, vec![Selection { id: merged.id, variant: Some(q80), danmaku: false }]).unwrap();
     assert_eq!(summary, Summary { total: 1, successful: 1, ..Default::default() }, "international media with the China cover");
 
     // Export only accepts media of the same part, under a supported app's cache root.
@@ -404,10 +404,10 @@ fn multi_quality_requires_explicit_valid_choice() {
     assert!(single.variants[broken].issue.contains("缺少"));
     let e = h.app.export(r.generation, vec![sel(multi.id)]).unwrap_err();
     assert!(e.message.contains("選擇畫質"));
-    assert!(h.app.export(r.generation, vec![Selection { id: single.id, variant: Some(broken) }]).unwrap_err().message.contains("無法匯出"));
-    assert!(h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(9) }]).is_err());
+    assert!(h.app.export(r.generation, vec![Selection { id: single.id, variant: Some(broken), danmaku: false }]).unwrap_err().message.contains("無法匯出"));
+    assert!(h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(9), danmaku: false }]).is_err());
     assert!(h.phone.lock().unwrap().pulls.is_empty(), "rejected before any transfer");
-    let summary = h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(q116) }]).unwrap();
+    let summary = h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(q116), danmaku: false }]).unwrap();
     assert_eq!(summary.partial, 1);
     assert_eq!(h.phone.lock().unwrap().pulls, vec![format!("{remote}/116/video.m4s"), format!("{remote}/116/audio.m4s")], "only the chosen quality is pulled");
 }
@@ -527,6 +527,47 @@ fn export_embeds_original_cover_and_verifies() {
     for stage in ["傳輸 video.m4s", "檢查串流", "合併 MP4", "嵌入原始封面", "驗證影音完整性", "完成"] {
         assert!(progress.iter().any(|p| p == stage), "missing stage {stage}");
     }
+}
+
+#[test]
+fn danmaku_become_a_sidecar_ass_and_never_fail_the_export() {
+    let mut phone = Phone::one_device();
+    let with = phone.add("1/c_1", "有彈幕", &["80"], true);
+    let disabled = phone.add("2/c_2", "彈幕關閉", &["80"], true);
+    let broken = phone.add("3/c_3", "彈幕壞掉", &["80"], true);
+    phone.add("4/c_4", "沒有彈幕", &["80"], true);
+    phone.files.insert(
+        format!("{with}/danmaku.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?><i><state>0</state><d p="3.12900,1,25,16777215,1769259328,0,5abec846,2031453501405815552,3">好耶</d></i>"#
+            .into(),
+    );
+    phone.files.insert(
+        format!("{disabled}/danmaku.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?><i><state>2</state><text>本视频弹幕功能已被关闭</text></i>"#.into(),
+    );
+    phone.files.insert(format!("{broken}/danmaku.xml"), b"x".to_vec());
+    let h = harness(phone);
+    let r = h.app.connect(None).unwrap();
+    let counts: Vec<(String, usize)> = r.items.iter().map(|i| (i.remote.clone(), i.danmaku)).collect();
+    assert!(counts.iter().all(|(remote, n)| *n == usize::from(*remote == with)), "only drawable comments are counted: {counts:?}");
+    let ticked = |i: &CacheItem| Selection { danmaku: true, ..sel(i.id) };
+    let summary = h.app.export(r.generation, r.items.iter().map(ticked).collect()).unwrap();
+    assert_eq!(summary, Summary { total: 4, successful: 4, ..Default::default() }, "{:?}", results(&h));
+    let out = h.dir.join("output");
+    let ass = || -> Vec<String> { mp4s(&out).into_iter().filter(|n| n.ends_with(".ass")).collect() };
+    assert_eq!(ass(), vec!["有彈幕 — 第一集.ass"], "only the item with drawable danmaku gets one");
+    let text = std::fs::read_to_string(out.join("有彈幕 — 第一集.ass")).unwrap();
+    assert!(text.contains(r"Dialogue: 0,0:00:03.13,0:00:11.13,Danmaku,,0,0,0,,{\an7\move(1920,0,-100,0)}好耶"), "{text}");
+    // A second export of the same title pairs the new subtitle with the numbered MP4.
+    let item = r.items.iter().find(|i| i.remote == with).unwrap();
+    h.app.export(r.generation, vec![ticked(item)]).unwrap();
+    assert!(out.join("有彈幕 — 第一集 (1).ass").exists());
+    // Not ticked: MP4 only, and danmaku.xml is never transferred.
+    h.phone.lock().unwrap().pulls.clear();
+    h.app.export(r.generation, vec![sel(item.id)]).unwrap();
+    assert!(out.join("有彈幕 — 第一集 (2).mp4").exists() && ass().len() == 2);
+    assert!(h.phone.lock().unwrap().pulls.iter().all(|p| !p.ends_with("danmaku.xml")));
+    assert!(!out.join(".bili-temp").read_dir().unwrap().any(|_| true), "temp cleaned");
 }
 
 #[test]

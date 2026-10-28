@@ -99,6 +99,9 @@ pub struct ConnectResult {
 pub struct Selection {
     pub id: usize,
     pub variant: Option<usize>,
+    /// Also write the row's danmaku as an .ass beside the MP4.
+    #[serde(default)]
+    pub danmaku: bool,
 }
 
 #[derive(Default)]
@@ -398,7 +401,11 @@ impl App {
             for pick in &selection {
                 let item = state.items.get(pick.id).ok_or_else(|| err("選取的項目不存在，請重新掃描。"))?;
                 let variant = item.exportable_variant(pick.variant).map_err(|e| err(format!("{}：{e}", item.title)))?;
-                tasks.push((item.clone(), variant.clone()));
+                let mut item = item.clone();
+                if !pick.danmaku {
+                    item.danmaku = 0;
+                }
+                tasks.push((item, variant.clone()));
             }
             (serial, tasks)
         };
