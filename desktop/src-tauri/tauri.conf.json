@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "BiliCacheExporter",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "identifier": "local.bilicacheexporter.desktop",
   "build": {
     "frontendDist": "../dist",
