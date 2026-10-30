@@ -473,7 +473,7 @@ onMounted(async () => {
               </small>
             </label>
             <div class="setting">
-              <small>工具只在你按下載時取得，不會在啟動時自動更新。相對路徑以程式資料夾為準，不使用 PATH。</small>
+              <small>工具只在你按下載時取得，不會在啟動時自動更新。相對路徑以程式資料夾為準。沒有設定檔時，會先從程式資料夾、再從 PATH 自動帶入。</small>
               <span class="actions">
                 <button type="button" :disabled="busy || blocked" @click="openTools([])">下載並設定工具</button>
                 <button type="button" :disabled="busy || blocked" @click="checkTools">檢查工具</button>
