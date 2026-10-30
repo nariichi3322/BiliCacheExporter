@@ -18,7 +18,17 @@ fn sel(id: usize) -> Selection {
 
 fn input(h: &Harness) -> SettingsInput {
     let s = h.app.snapshot().settings;
-    SettingsInput { adb: s.adb, ffmpeg: s.ffmpeg, ffprobe: s.ffprobe, output: s.output, temp: s.temp, theme: s.theme, accent: s.accent, check_updates: true }
+    SettingsInput {
+        adb: s.adb,
+        ffmpeg: s.ffmpeg,
+        ffprobe: s.ffprobe,
+        output: s.output,
+        temp: s.temp,
+        theme: s.theme,
+        accent: s.accent,
+        check_updates: true,
+        full_decode: s.full_decode,
+    }
 }
 
 fn results(h: &Harness) -> Vec<(usize, Outcome, String)> {
@@ -70,6 +80,7 @@ fn corrupt_settings_are_reported_not_replaced() {
         theme: "dark".into(),
         accent: "blue".into(),
         check_updates: true,
+        full_decode: false,
     };
     assert!(h.app.save_settings(i).is_err());
     assert_eq!(std::fs::read_to_string(dir.join("settings.json")).unwrap(), "{ broken", "corrupt file untouched");
@@ -96,6 +107,7 @@ fn unwritable_folder_blocks_with_actionable_message() {
             theme: "light".into(),
             accent: "blue".into(),
             check_updates: true,
+            full_decode: false,
         })
         .unwrap_err();
     assert!(err.message.contains("可寫的位置"));
@@ -285,8 +297,16 @@ fn china_app_is_scanned_and_same_video_in_both_apps_is_one_row() {
     let out = tempdir();
     for part in ["/sdcard/Android/data/com.example.other/download/1/c_1", &format!("{CHINA_ROOT}2/c_2"), &format!("{ROOT}2/c_2")] {
         let variant = bili_core::scan::Variant { video: format!("{part}/16/video.m4s"), audio: format!("{part}/16/audio.m4s"), ..item.variants[0].clone() };
-        let request =
-            Request { serial: SERIAL, item: &item, variant: &variant, ffmpeg: &ffmpeg(), ffprobe: &ffprobe(), output: &out.to_string_lossy(), temp: "" };
+        let request = Request {
+            serial: SERIAL,
+            item: &item,
+            variant: &variant,
+            ffmpeg: &ffmpeg(),
+            ffprobe: &ffprobe(),
+            output: &out.to_string_lossy(),
+            temp: "",
+            full_decode: true,
+        };
         assert!(export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {}).unwrap_err().to_string().contains("同一個分 P"), "{part}");
     }
 }
@@ -457,6 +477,9 @@ fn export_embeds_original_cover_and_verifies() {
     let remote = phone.add("1/c_1", "中文:影片", &["80"], true);
     phone.add("2/c_2", "未選", &["80"], true);
     let h = harness(phone);
+    let mut i = input(&h);
+    i.full_decode = true;
+    h.app.save_settings(i).unwrap();
     let r = h.app.connect(None).unwrap();
     let id = r.items.iter().find(|i| i.remote == remote).unwrap().id;
     h.phone.lock().unwrap().pulls.clear();
@@ -545,7 +568,8 @@ fn direct_export(
     let items = adb.scan(SERIAL, &Cancel::default(), &mut |_| {}).unwrap();
     let item = items.iter().find(|i| i.remote == remote).unwrap();
     let variant = item.exportable_variant(None).unwrap();
-    let request = Request { serial: SERIAL, item, variant, ffmpeg: &ffmpeg(), ffprobe: &ffprobe(), output: &output.to_string_lossy(), temp: "" };
+    let request =
+        Request { serial: SERIAL, item, variant, ffmpeg: &ffmpeg(), ffprobe: &ffprobe(), output: &output.to_string_lossy(), temp: "", full_decode: true };
     export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {})
 }
 
@@ -563,6 +587,23 @@ fn bad_media_never_reported_as_success() {
         let e = direct_export(phone, &remote, &out, None).unwrap_err();
         assert!(e.to_string().contains(expected), "{name}: {e}");
         assert!(mp4s(&out).iter().all(|n| !n.ends_with(".mp4")), "{name}: no MP4 left: {:?}", mp4s(&out));
+    }
+}
+
+#[test]
+fn full_decode_runs_only_when_turned_on() {
+    for full_decode in [false, true] {
+        let mut phone = Phone::one_device();
+        phone.add("1/c_1", "驗證", &["80"], true);
+        let h = harness(phone);
+        assert!(!h.app.snapshot().settings.full_decode, "off unless the user turns it on");
+        let mut i = input(&h);
+        i.full_decode = full_decode;
+        h.app.save_settings(i).unwrap();
+        let r = h.app.connect(None).unwrap();
+        assert_eq!(h.app.export(r.generation, vec![sel(r.items[0].id)]).unwrap().successful, 1);
+        let decoded = h.events.lock().unwrap().iter().any(|e| matches!(e, Event::Progress { progress } if progress.stage == "驗證影音完整性"));
+        assert_eq!(decoded, full_decode);
     }
 }
 
@@ -587,6 +628,7 @@ fn changed_source_space_and_unwritable_output_fail_safely() {
         ffprobe: &ffprobe(),
         output: &out.to_string_lossy(),
         temp: "",
+        full_decode: true,
     };
     let e = export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {}).unwrap_err();
     assert!(e.to_string().contains("傳輸大小與掃描時不同"));
@@ -738,6 +780,7 @@ fn temp_on_another_volume() {
         ffprobe: &ffprobe(),
         output: &out_text,
         temp: &temp_text,
+        full_decode: true,
     };
     let result = export(&runner, &adb, &storage, &request, &Cancel::default(), &mut |_, _| {}).unwrap();
     assert!(result.cover_error.is_none() && Path::new(&result.path).exists() && remote.ends_with("c_1"));

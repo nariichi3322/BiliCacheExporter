@@ -15,11 +15,11 @@ The app's interface is in Traditional Chinese; the button names below give the C
 3. If ADB or FFmpeg/FFprobe is missing the first time you press Connect (「連線」), the program lists the pinned version, source and size of each tool. Press Download and set up (「下載並設定」): files are downloaded to the `tools` folder next to the program and enabled only after their SHA-256 is verified and they are confirmed to run. You can also point Settings (「設定」) at tools you already have. On a first start without a settings file, `adb.exe`, `ffmpeg.exe` and `ffprobe.exe` are filled in from the program folder, else from PATH, else left empty; after that only the paths in Settings are used.
 4. Enable USB debugging on the phone, connect and unlock it, allow this computer when the phone asks, then press Connect. The program never queries the phone at startup or while idle; with several devices, choose the target first. A successful connection scans automatically.
 5. Nothing is selected at first. For items with several qualities, choose the quality in the same row first; incomplete, damaged or unsupported items show the reason and cannot be selected. Select all only selects exportable items.
-6. Press Export selected (「匯出所選」). Only the chosen quality's audio and video are transferred, then checked, merged (no re-encoding), fully decoded for verification and given the original cover.
+6. Press Export selected (「匯出所選」). Only the chosen quality's audio and video are transferred, then their streams are checked, merged (no re-encoding) and given the original cover. Turning on full verification (「匯出後完整驗證影音」) in Settings also decodes the whole MP4 to catch damaged files, at the cost of a much slower export (off by default).
 
 ## Results
 
-- **Done**: the audio/video fully decoded and the original cover was embedded.
+- **Done**: the audio/video streams passed their checks (including a full decode when full verification is on) and the original cover was embedded.
 - **Partly done**: the audio/video is valid but the cover is missing or could not be embedded; the valid MP4 is kept and you can retry.
 - **Failed**: the row and the detailed log (「詳細記錄」) give the reason; one failure does not stop the rest.
 - **Cancelled**: stops the current and remaining items, keeps finished videos and cleans this run's temporary files. Retry unfinished items (「重試未完成項目」) transfers again and never overwrites existing MP4 files. After unplugging the phone you must reconnect; reconnecting does not resume an export by itself.

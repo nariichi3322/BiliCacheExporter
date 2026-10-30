@@ -214,7 +214,7 @@ async function setTheme(light: boolean) {
 }
 function currentInput() {
   const t = s.settings!
-  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, accent: t.Accent, checkUpdates: t.CheckUpdates }
+  return { adb: t.Adb, ffmpeg: t.Ffmpeg, ffprobe: t.Ffprobe, output: t.Output, temp: t.Temp, theme: t.Theme, accent: t.Accent, checkUpdates: t.CheckUpdates, fullDecode: !!t.FullDecode }
 }
 async function setAccent(value: string) {
   if (!s.settings) return
@@ -228,6 +228,14 @@ async function setCheckUpdates(on: boolean) {
   if (!s.settings) return
   try {
     s.settings = await api.saveSettings({ ...currentInput(), checkUpdates: on })
+  } catch (e) {
+    fail(e)
+  }
+}
+async function setFullDecode(on: boolean) {
+  if (!s.settings) return
+  try {
+    s.settings = await api.saveSettings({ ...currentInput(), fullDecode: on })
   } catch (e) {
     fail(e)
   }
@@ -487,6 +495,15 @@ onMounted(async () => {
               <span class="muted">記錄存放在程式旁的 log 資料夾，不會自動上傳；裝置序號、網址參數與個人路徑會遮蔽。</span>
               <button :disabled="!s.logPath" @click="openFolder('log')">開啟日誌資料夾</button>
             </div>
+          </div>
+          <div class="panel full">
+            <h3>匯出</h3>
+            <label class="setting">
+              <span>匯出後完整驗證影音
+                <span class="hint" tabindex="0" @click.prevent>?<span id="full-decode-tip" class="tip" role="tooltip">把匯出的 MP4 從頭到尾完整解碼一次，確認每個影音封包都讀得出來，可抓出傳輸中斷或快取本身損壞的檔案。代價是匯出明顯變慢，影片越長越久。關閉時仍會檢查串流格式與加密，只是不逐格解碼。</span></span>
+              </span>
+              <input type="checkbox" aria-describedby="full-decode-tip" :checked="!!s.settings?.FullDecode" :disabled="busy || blocked" @change="setFullDecode(($event.target as HTMLInputElement).checked)" />
+            </label>
           </div>
           <div class="panel full">
             <h3>更新</h3>

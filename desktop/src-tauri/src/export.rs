@@ -15,6 +15,8 @@ pub struct Request<'a> {
     pub ffprobe: &'a Path,
     pub output: &'a str,
     pub temp: &'a str,
+    /// Also decode the whole MP4 after merging (the slow step); stream probes always run.
+    pub full_decode: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -144,6 +146,9 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
     let validate = |path: &Path, progress: &mut dyn FnMut(Option<f64>, &str)| -> Res<()> {
         probe(path, "video")?;
         probe(path, "audio")?;
+        if !req.full_decode {
+            return Ok(());
+        }
         progress(None, "驗證影音完整性");
         runner.run(
             &ffmpeg,

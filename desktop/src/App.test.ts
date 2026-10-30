@@ -31,7 +31,7 @@ const items = [
 
 function snapshot(extra: Partial<Snapshot> = {}): Snapshot {
   return {
-    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark', Accent: 'blue', CheckUpdates: true, SkipVersion: '' },
+    version: '2.0.0+test', settings: { Adb: 'tools\\adb\\adb.exe', Ffmpeg: 'f', Ffprobe: 'p', Output: 'D:\\Out', Temp: '', Theme: 'dark', Accent: 'blue', CheckUpdates: true, FullDecode: false, SkipVersion: '' },
     settingsError: null, storageError: null, logPath: 'log', devices: [], serial: null, items: [], generation: 0, recoverableJobs: 0,
     packages: [{ name: 'adb', title: 'Android SDK Platform-Tools（ADB）', version: '37.0.1', publisher: 'Google', url: 'https://x', sha256: 'h', size: 8044989, license: 'L' }],
     ...extra,
@@ -49,7 +49,7 @@ const connected = { devices: [{ serial: 'S1', state: 'device', detail: 'model:SM
 
 beforeEach(() => {
   calls.length = 0
-  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme, Accent: input.accent, CheckUpdates: input.checkUpdates }) }
+  handlers = { connect: () => connected, save_settings: ({ input }: any) => ({ Adb: input.adb, Ffmpeg: input.ffmpeg, Ffprobe: input.ffprobe, Output: input.output, Temp: input.temp, Theme: input.theme, Accent: input.accent, CheckUpdates: input.checkUpdates, FullDecode: input.fullDecode }) }
   document.body.innerHTML = ''
 })
 
@@ -235,6 +235,23 @@ describe('compact list', () => {
     expect((calls.find(c => c.cmd === 'save_settings')!.args as any).input).toMatchObject({ accent: 'pink', theme: 'dark' })
     expect(document.documentElement.dataset.accent).toBe('pink')
     expect(w.get('[aria-label="B 站粉"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('full verification is off by default, explained by a hint and saved when turned on', async () => {
+    handlers.check_tools = () => []
+    const w = await start()
+    await w.findAll('button').find(b => b.text().includes('設定'))!.trigger('click')
+    await flushPromises()
+    const label = w.findAll('label.setting').find(l => l.text().includes('匯出後完整驗證影音'))!
+    const toggle = label.get('input')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    expect(toggle.attributes('aria-describedby')).toBe('full-decode-tip')
+    expect(label.get('#full-decode-tip').text()).toContain('變慢')
+    await label.get('.hint').trigger('click')
+    expect(calls.some(c => c.cmd === 'save_settings')).toBe(false)
+    await toggle.setValue(true)
+    await flushPromises()
+    expect((calls.filter(c => c.cmd === 'save_settings').pop()!.args as any).input.fullDecode).toBe(true)
   })
 
   it('settings has one way back and an update card', async () => {

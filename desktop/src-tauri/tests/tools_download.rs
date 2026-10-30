@@ -184,6 +184,7 @@ fn portable_relative_tool_paths_survive_moving_the_folder() {
             theme: s.theme,
             accent: s.accent,
             check_updates: true,
+            full_decode: false,
         })
         .unwrap();
     assert_eq!(h.app.snapshot().settings.adb, r"tools\adb\fake-adb.exe", "stored relative to the program folder");

@@ -71,6 +71,8 @@ pub struct SettingsInput {
     pub theme: String,
     pub accent: String,
     pub check_updates: bool,
+    #[serde(default)]
+    pub full_decode: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -229,6 +231,7 @@ impl App {
         s.theme = if input.theme == "light" { "light".into() } else { "dark".into() };
         s.accent = settings::accent(&input.accent);
         s.check_updates = input.check_updates;
+        s.full_decode = input.full_decode;
         settings::save(&self.dir, &s)?;
         self.state.lock().unwrap().settings = Some(s.clone());
         Ok(s)
@@ -418,7 +421,7 @@ impl App {
         }
         let storage = self.storage.as_ref().ok_or_else(|| err("程式資料夾無法寫入。"))?;
         let (ffmpeg, ffprobe) = (self.tool_path(&s, Kind::Ffmpeg), self.tool_path(&s, Kind::Ffprobe));
-        let tools = batch::Tools { ffmpeg: &ffmpeg, ffprobe: &ffprobe, output: s.output.trim(), temp: s.temp.trim() };
+        let tools = batch::Tools { ffmpeg: &ffmpeg, ffprobe: &ffprobe, output: s.output.trim(), temp: s.temp.trim(), full_decode: s.full_decode };
         let summary = batch::run(
             &self.runner,
             &adb,

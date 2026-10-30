@@ -26,6 +26,9 @@ pub struct Settings {
     pub accent: String,
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// Fully decode each exported MP4; off by default because it takes about as long as reading the whole video.
+    #[serde(default)]
+    pub full_decode: bool,
     #[serde(default)]
     pub skip_version: String,
     #[serde(default)]
@@ -70,6 +73,7 @@ impl Settings {
             theme: dark(),
             accent: blue(),
             check_updates: true,
+            full_decode: false,
             skip_version: String::new(),
             settings_version: VERSION,
             extra: Map::new(),
