@@ -21,7 +21,7 @@ import App from './App.vue'
 
 const variant = (q: string, issue = '', label = q) => ({ video: 'v', audio: 'a', videoSize: 1048576, audioSize: 1048576, quality: q, label, issue })
 const item = (id: number, extra: Partial<CacheItem> = {}): CacheItem => ({
-  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], source: '國際版（com.bilibili.app.in）', ...extra,
+  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], source: '國際版（com.bilibili.app.in）', exported: false, ...extra,
 })
 const items = [
   item(0),
@@ -88,6 +88,13 @@ describe('compact list', () => {
     await flushPromises()
     expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [{ id: 0, variant: 0 }, { id: 1, variant: 1 }] })
     expect(w.text()).toContain('匯出完成')
+  })
+
+  it('marks rows whose MP4 is already in the output folder', async () => {
+    const w = await start({ ...connected, items: [item(0, { exported: true }), item(1)] })
+    const [done, fresh] = w.findAll('li.row')
+    expect(done.get('.meta').text()).toContain('輸出資料夾已有同名影片，可能匯出過')
+    expect(fresh.text()).not.toContain('同名影片')
   })
 
   it('needs an explicit device when several are attached', async () => {

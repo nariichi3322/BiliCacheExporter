@@ -271,9 +271,8 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
         }
     };
     cancel.check()?;
-    let name = file_name(&req.item.title);
     for i in 0..10_000 {
-        let target: PathBuf = Path::new(req.output).join(format!("{name}{}.mp4", if i == 0 { String::new() } else { format!(" ({i})") }));
+        let target: PathBuf = Path::new(req.output).join(output_name(&req.item.title, i));
         match move_no_replace(&chosen, &target) {
             Ok(()) => {
                 progress(Some(1.0), if cover_error.is_none() { "完成" } else { "部分完成：缺封面" });
@@ -285,6 +284,11 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
         }
     }
     fail("同名檔案過多，請整理輸出資料夾。")
+}
+
+/// File name of an export of `title`; `n` > 0 adds the " (n)" used when earlier names are taken.
+pub fn output_name(title: &str, n: usize) -> String {
+    format!("{}{}.mp4", file_name(title), if n == 0 { String::new() } else { format!(" ({n})") })
 }
 
 /// Final placement never overwrites (std::fs::rename would replace an existing file on Windows).

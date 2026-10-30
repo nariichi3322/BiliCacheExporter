@@ -356,7 +356,14 @@ impl App {
         (self.emit)(Event::Stage { text: "正在讀取快取影片…".into() });
         let result = adb.scan(serial, cancel, &mut |item| (self.emit)(Event::Item { item: item.clone() }));
         match result {
-            Ok(items) => {
+            Ok(mut items) => {
+                // The name an export takes first; a renamed, moved or " (n)" copy is not detected.
+                let output = self.settings().map(|s| s.output.trim().to_string()).unwrap_or_default();
+                if Path::new(&output).is_absolute() {
+                    for item in &mut items {
+                        item.exported = Path::new(&output).join(crate::export::output_name(&item.title, 0)).is_file();
+                    }
+                }
                 let mut state = self.state.lock().unwrap();
                 state.items = items.clone();
                 self.log.log(&format!("掃描完成：{} 個項目", items.len()));

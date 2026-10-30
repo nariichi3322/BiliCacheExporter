@@ -248,6 +248,8 @@ fn china_app_is_scanned_and_same_video_in_both_apps_is_one_row() {
     assert_eq!(r.items[0].source, "中國版（tv.danmaku.bili）");
     assert_eq!(h.app.export(r.generation, vec![sel(r.items[0].id)]).unwrap().successful, 1);
     assert!(mp4s(&h.dir.join("output")).contains(&"中國版影片 — 第一集.mp4".to_string()));
+    assert!(!r.items[0].exported, "nothing in the output folder before the first export");
+    assert!(h.app.scan().unwrap().items[0].exported, "a rescan sees the exported file");
 
     // The same part in both apps is one row; its qualities from both apps share one menu.
     let mut phone = Phone { china: true, ..Phone::one_device() };
