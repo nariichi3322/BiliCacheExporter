@@ -566,8 +566,8 @@ onMounted(async () => {
                   <span v-else>{{ item.quality || '畫質未知' }}</span>
                   <span v-if="reason(item)" class="warning"> · {{ reason(item) }}</span>
                   <span v-if="!item.hasCover && !item.issue" class="muted"> · 快取沒有封面</span>
-                  <span v-if="item.exported" class="muted"> · 輸出資料夾已有同名影片，可能匯出過</span>
                 </div>
+                <div v-if="item.exported" class="meta accent exported">輸出資料夾已有同名影片，可能匯出過</div>
                 <label v-if="item.danmaku > 0" class="danmaku-option"><input v-model="s.danmaku[item.id]" type="checkbox" :aria-label="'匯出彈幕：' + item.title" :disabled="busy" /> 匯出彈幕 <span class="muted">· {{ item.danmaku.toLocaleString() }} 則</span></label>
                 <div v-if="s.results[item.id]" class="meta" :class="s.results[item.id].outcome === 'success' ? 'good' : 'warning'">{{ outcomeLabel[s.results[item.id].outcome] }}{{ resultDetail(s.results[item.id]) }}</div>
                 <div v-else-if="s.progress && s.progress.id === item.id" class="meta accent">{{ s.progress.stage }}</div>

@@ -93,7 +93,7 @@ describe('compact list', () => {
   it('marks rows whose MP4 is already in the output folder', async () => {
     const w = await start({ ...connected, items: [item(0, { exported: true }), item(1)] })
     const [done, fresh] = w.findAll('li.row')
-    expect(done.get('.meta').text()).toContain('輸出資料夾已有同名影片，可能匯出過')
+    expect(done.get('.meta.accent.exported').text()).toBe('輸出資料夾已有同名影片，可能匯出過')
     expect(fresh.text()).not.toContain('同名影片')
   })
 
