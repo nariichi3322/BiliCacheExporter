@@ -41,9 +41,6 @@ h3 { font-size: 16px; font-weight: 600; }
 small, .small { font-size: 12px; }
 small { color: var(--muted); }
 .muted { color: var(--muted); }
-.good { color: var(--good); }
-.warning { color: var(--warn); }
-.accent { color: var(--blue); }
 .notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; margin: 0; padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatch { width: 26px; height: 26px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
@@ -74,6 +71,10 @@ small { color: var(--muted); }
 .title { font-weight: 500; overflow-wrap: anywhere; }
 .meta { color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
 .meta select { font-size: 12px; padding: 3px 6px; max-width: 100%; }
+/* Status colors come after .meta so a status line is not left in its muted default. */
+.good { color: var(--good); }
+.warning { color: var(--warn); }
+.accent { color: var(--blue); }
 .danmaku-option { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: fit-content; max-width: 100%; margin-top: 8px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--raised); font-size: 12px; }
 .danmaku-option:has(input:checked) { color: var(--blue); border-color: var(--blue); background: color-mix(in srgb, var(--button) 12%, var(--surface)); }
 .thumb { width: 76px; height: 44px; flex-shrink: 0; border-radius: 7px; object-fit: cover; background: var(--raised); color: var(--muted); display: grid; place-items: center; font-size: 11px; }

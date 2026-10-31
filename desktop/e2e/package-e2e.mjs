@@ -264,6 +264,9 @@ check(chinaOnly && pulls.some(p => p.includes('tv.danmaku.bili/download/500/c_5/
 check(calls(dir).filter(c => c[2] === 'shell').every(c => /^(pm list|find |stat -c|cat )/.test(c[3])), 'Phone only received read-only commands')
 const resultText = await app.text()
 check(resultText.includes('部分完成') && resultText.includes('手機快取中沒有封面圖片'), 'Missing cover reported as partial with reason')
+// Status colors must beat the muted .meta default in the real cascade (unit tests only see class names).
+const metaColorDiffers = sel => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); const m = document.querySelector('li.row .meta:not(.good):not(.warning):not(.accent)'); return !!e && !!m && getComputedStyle(e).color !== getComputedStyle(m).color })()`
+check(await app.eval(metaColorDiffers('li.row .meta.warning')), 'Partial result line keeps its warning color')
 const extracted = path.join(work, 'extracted.jpg')
 run(ffmpeg, ['-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', path.join(dir, 'out', long), '-map', '0:v:1', '-c', 'copy', '-f', 'image2', extracted])
 check(Buffer.compare(fs.readFileSync(extracted), fs.readFileSync(path.join(work, 'media', 'cover.jpg'))) === 0, 'Embedded cover equals the original bytes')
@@ -357,6 +360,7 @@ check(saved.SettingsVersion === 2, 'Settings saved with the current version')
 // Unplug: export is refused before transfer; reconnect does not resume.
 await app.click('連線')
 await app.waitFor("document.querySelectorAll('li.row').length === 5")
+check(await app.eval(metaColorDiffers('li.row .meta.exported')), 'Rescan marks exported rows on their own line in the accent color')
 await app.eval("document.querySelector('li.row input[type=checkbox]').click()")
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/devices.txt'), 'List of devices attached\n')
 const pullsBefore = calls(dir).filter(c => c[2] === 'pull').length
