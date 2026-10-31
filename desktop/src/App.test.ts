@@ -21,7 +21,7 @@ import App from './App.vue'
 
 const variant = (q: string, issue = '', label = q) => ({ video: 'v', audio: 'a', videoSize: 1048576, audioSize: 1048576, quality: q, label, issue })
 const item = (id: number, extra: Partial<CacheItem> = {}): CacheItem => ({
-  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, inventory: [], source: '國際版（com.bilibili.app.in）', exported: false, ...extra,
+  id, title: `影片 ${id}`, remote: `/r/${id}`, variants: [variant('80（快取目錄）')], autoVariant: 0, needsChoice: false, issue: '', quality: '80（快取目錄）', cover: null, hasCover: true, danmaku: 0, inventory: [], source: '國際版（com.bilibili.app.in）', exported: false, ...extra,
 })
 const items = [
   item(0),
@@ -86,15 +86,143 @@ describe('compact list', () => {
     expect(exportButton.text()).toContain('（2）')
     await exportButton.trigger('click')
     await flushPromises()
-    expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [{ id: 0, variant: 0 }, { id: 1, variant: 1 }] })
+    expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [{ id: 0, variant: 0, danmaku: false }, { id: 1, variant: 1, danmaku: false }] })
     expect(w.text()).toContain('匯出完成')
   })
 
   it('marks rows whose MP4 is already in the output folder', async () => {
     const w = await start({ ...connected, items: [item(0, { exported: true }), item(1)] })
     const [done, fresh] = w.findAll('li.row')
-    expect(done.get('.meta').text()).toContain('輸出資料夾已有同名影片，可能匯出過')
+    expect(done.get('.meta.accent.exported').text()).toBe('輸出資料夾已有同名影片，可能匯出過')
     expect(fresh.text()).not.toContain('同名影片')
+  })
+
+  it('only shows the danmaku count and unchecked export box for rows with danmaku', async () => {
+    const w = await start({ ...connected, items: [item(0, { danmaku: 60, hasCover: false }), item(1)] })
+    const [withDanmaku, withoutDanmaku] = w.findAll('li.row')
+    expect(withDanmaku.get('.meta').text()).toContain('· 快取沒有封面')
+    expect(withDanmaku.get('.danmaku-option').text()).toBe('匯出彈幕 · 60 則')
+    expect((withDanmaku.get('[aria-label="匯出彈幕：影片 0"]').element as HTMLInputElement).checked).toBe(false)
+    expect(withoutDanmaku.text()).not.toContain('彈幕')
+    expect(withoutDanmaku.findAll('input[type=checkbox]')).toHaveLength(1)
+    await withDanmaku.get('[aria-label="選取 影片 0"]').setValue(true)
+    expect((withDanmaku.get('[aria-label="匯出彈幕：影片 0"]').element as HTMLInputElement).checked).toBe(false)
+    handlers.export = () => ({ total: 1, successful: 1, partial: 0, failed: 0, cancelled: 0, notStarted: 0 })
+    await w.get('button.primary').trigger('click')
+    await flushPromises()
+    expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [{ id: 0, variant: 0, danmaku: false }] })
+  })
+
+  it('keeps danmaku independent of video selection and sends the checked choice on export', async () => {
+    const w = await start({ ...connected, items: [item(0, { danmaku: 60 }), item(1, { danmaku: 10 })] })
+    const box = w.get('[aria-label="匯出彈幕：影片 0"]')
+    const video = w.get('[aria-label="選取 影片 0"]')
+    await box.setValue(true)
+    expect((video.element as HTMLInputElement).checked).toBe(false)
+    expect(w.get('button.primary').attributes('disabled')).toBeDefined()
+    await video.setValue(true)
+    await video.setValue(false)
+    expect((box.element as HTMLInputElement).checked).toBe(true)
+    await w.get('.toolbar input[type=checkbox]').setValue(true)
+    handlers.export = () => ({ total: 2, successful: 2, partial: 0, failed: 0, cancelled: 0, notStarted: 0 })
+    await w.get('button.primary').trigger('click')
+    await flushPromises()
+    expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [{ id: 0, variant: 0, danmaku: true }, { id: 1, variant: 0, danmaku: false }] })
+    await box.setValue(false)
+    expect((video.element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('clears danmaku choices when a new scan replaces the list', async () => {
+    const scanned = [item(0, { danmaku: 60 })]
+    const w = await start({ ...connected, items: scanned })
+    await w.get('[aria-label="匯出彈幕：影片 0"]').setValue(true)
+    handlers.scan = () => ({ ...connected, items: scanned, generation: 2 })
+    await w.findAll('button').find(b => b.text() === '重新掃描')!.trigger('click')
+    await flushPromises()
+    expect((w.get('[aria-label="匯出彈幕：影片 0"]').element as HTMLInputElement).checked).toBe(false)
+    const all = w.get<HTMLInputElement>('[aria-label="全選彈幕"]')
+    expect(all.element.checked).toBe(false)
+    expect(all.element.indeterminate).toBe(false)
+  })
+
+  it('selects all available danmaku independently and reflects individual changes', async () => {
+    const w = await start({ ...connected, items: [item(0, { danmaku: 60 }), item(1, { danmaku: 1280 }), item(2)] })
+    const all = w.get<HTMLInputElement>('[aria-label="全選彈幕"]')
+    const first = w.get<HTMLInputElement>('[aria-label="匯出彈幕：影片 0"]')
+    const second = w.get<HTMLInputElement>('[aria-label="匯出彈幕：影片 1"]')
+    expect(all.element.checked).toBe(false)
+    expect(all.element.indeterminate).toBe(false)
+    await first.setValue(true)
+    expect(all.element.checked).toBe(false)
+    expect(all.element.indeterminate).toBe(true)
+    await all.setValue(true)
+    expect(first.element.checked && second.element.checked).toBe(true)
+    expect(all.element.indeterminate).toBe(false)
+    expect(w.get('button.primary').attributes('disabled')).toBeDefined()
+    expect(w.findAll<HTMLInputElement>('.row > input').every(b => !b.element.checked)).toBe(true)
+    await w.get('.toolbar input[type=checkbox]').setValue(true)
+    await all.setValue(false)
+    expect(first.element.checked || second.element.checked).toBe(false)
+    expect(all.element.indeterminate).toBe(false)
+    expect(w.findAll<HTMLInputElement>('.row > input').every(b => b.element.checked)).toBe(true)
+    await all.setValue(true)
+    handlers.export = () => ({ total: 3, successful: 3, partial: 0, failed: 0, cancelled: 0, notStarted: 0 })
+    await w.get('button.primary').trigger('click')
+    await flushPromises()
+    expect(calls.find(c => c.cmd === 'export')!.args).toEqual({ generation: 1, selection: [
+      { id: 0, variant: 0, danmaku: true }, { id: 1, variant: 0, danmaku: true }, { id: 2, variant: 0, danmaku: false },
+    ] })
+  })
+
+  it('disables bulk danmaku selection when none is available or while exporting', async () => {
+    const empty = await start({ ...connected, items: [item(0)] })
+    expect(empty.get('[aria-label="全選彈幕"]').attributes('disabled')).toBeDefined()
+    empty.unmount()
+    const w = await start({ ...connected, items: [item(0, { danmaku: 60 })] })
+    let finish!: (value: unknown) => void
+    handlers.export = () => new Promise(resolve => { finish = resolve })
+    await w.get('[aria-label="選取 影片 0"]').setValue(true)
+    await w.get('button.primary').trigger('click')
+    expect(w.get('[aria-label="全選彈幕"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[aria-label="匯出彈幕：影片 0"]').attributes('disabled')).toBeDefined()
+    finish({ total: 1, successful: 1, partial: 0, failed: 0, cancelled: 0, notStarted: 0 })
+    await flushPromises()
+    expect(w.get('[aria-label="全選彈幕"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('counts selected exportable videos with danmaku enabled in the toolbar', async () => {
+    const w = await start({ ...connected, items: [item(0, { danmaku: 60 }), item(1, { danmaku: 1280 }), item(2), item(3, { danmaku: 500, issue: '下載尚未完成', autoVariant: null })] })
+    const summary = w.get('.toolbar .muted')
+    expect(summary.text()).toContain('已選 0 部影片的彈幕')
+    await w.get('[aria-label="全選彈幕"]').setValue(true)
+    expect(summary.text()).toContain('已選 0 部影片的彈幕')
+    await w.get('[aria-label="選取 影片 0"]').setValue(true)
+    expect(summary.text()).toContain('已選 1 部影片的彈幕')
+    await w.get('.toolbar input[type=checkbox]').setValue(true)
+    expect(summary.text()).toContain('已選 2 部影片的彈幕')
+    await w.get('[aria-label="匯出彈幕：影片 0"]').setValue(false)
+    expect(summary.text()).toContain('已選 1 部影片的彈幕')
+    await w.get('[aria-label="選取 影片 1"]').setValue(false)
+    expect(summary.text()).toContain('已選 0 部影片的彈幕')
+    await w.get('[aria-label="選取 影片 1"]').setValue(true)
+    await w.get('[aria-label="全選彈幕"]').setValue(true)
+    await w.get('[aria-label="全選彈幕"]').setValue(false)
+    expect(summary.text()).toContain('已選 0 部影片的彈幕')
+  })
+
+  it('keeps the danmaku label separate from cache details', async () => {
+    const w = await start({ ...connected, items: [item(0, { danmaku: 1280, inventory: [{ path: '80/video.m4s', size: 1024, error: '' }] })] })
+    const row = w.get('li.row')
+    expect(row.get('.danmaku-option').text()).toContain((1280).toLocaleString() + ' 則')
+    const details = row.get<HTMLDetailsElement>('details')
+    expect(details.find('input').exists()).toBe(false)
+    expect(row.get('.danmaku-option').find('summary').exists()).toBe(false)
+    expect(row.get('.danmaku-option').element.nextElementSibling).toBe(details.element)
+    await row.get('[aria-label="匯出彈幕：影片 0"]').setValue(true)
+    expect(details.element.open).toBe(false)
+    details.element.open = true
+    expect(details.text()).toContain('80/video.m4s')
+    expect(row.get<HTMLInputElement>('[aria-label="選取 影片 0"]').element.checked).toBe(false)
   })
 
   it('needs an explicit device when several are attached', async () => {

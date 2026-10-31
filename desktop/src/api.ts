@@ -31,6 +31,7 @@ export interface CacheItem {
   quality: string
   cover: string | null
   hasCover: boolean
+  danmaku: number
   inventory: FileInfo[]
   source: string
   exported: boolean
@@ -76,7 +77,7 @@ export const api = {
   checkTools: () => invoke<ToolStatus[]>('check_tools'),
   connect: (serial: string | null) => invoke<ConnectResult>('connect', { serial }),
   scan: () => invoke<ConnectResult>('scan'),
-  export: (generation: number, selection: { id: number; variant: number | null }[]) => invoke<Summary>('export', { generation, selection }),
+  export: (generation: number, selection: { id: number; variant: number | null; danmaku?: boolean }[]) => invoke<Summary>('export', { generation, selection }),
   cancel: () => invoke<void>('cancel'),
   recoverJobs: () => invoke<[number, number]>('recover_jobs'),
   downloadTools: (names: string[]) => invoke<Settings>('download_tools', { names }),

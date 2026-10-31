@@ -21,6 +21,7 @@ const s = reactive({
   generation: 0,
   selected: new Set<number>(),
   choices: {} as Record<number, number>,
+  danmaku: {} as Record<number, boolean>,
   results: {} as Record<number, ItemResult>,
   progress: null as BatchProgress | null,
   summary: null as Summary | null,
@@ -70,12 +71,19 @@ function sizeOf(item: CacheItem) {
 const exportableItems = computed(() => s.items.filter(exportable))
 const selectedItems = computed(() => s.items.filter(i => s.selected.has(i.id) && exportable(i)))
 const selectedBytes = computed(() => selectedItems.value.reduce((n, i) => n + (sizeOf(i) ?? 0), 0))
+const selectedDanmaku = computed(() => selectedItems.value.filter(i => i.danmaku > 0 && s.danmaku[i.id]).length)
 const allSelected = computed(() => exportableItems.value.length > 0 && exportableItems.value.every(i => s.selected.has(i.id)))
+const danmakuItems = computed(() => s.items.filter(i => i.danmaku > 0))
+const allDanmaku = computed(() => danmakuItems.value.length > 0 && danmakuItems.value.every(i => s.danmaku[i.id]))
+const someDanmaku = computed(() => !allDanmaku.value && danmakuItems.value.some(i => s.danmaku[i.id]))
 const retryable = computed(() => s.items.filter(i => exportable(i) && ['failed', 'partial', 'cancelled', 'notStarted'].includes(s.results[i.id]?.outcome)))
 const canExport = computed(() => !busy.value && !blocked.value && !!s.serial && selectedItems.value.length > 0)
 
 function toggleAll(on: boolean) {
   s.selected = new Set(on ? exportableItems.value.map(i => i.id) : [])
+}
+function toggleAllDanmaku(on: boolean) {
+  for (const item of danmakuItems.value) s.danmaku[item.id] = on
 }
 function toggle(item: CacheItem, on: boolean) {
   const next = new Set(s.selected)
@@ -94,6 +102,7 @@ function apply(snapshot: { devices: Device[]; serial: string | null; items: Cach
     // A new list never carries selections or results from the previous device or scan.
     s.selected = new Set()
     s.choices = {}
+    s.danmaku = {}
     s.results = {}
     s.summary = null
   }
@@ -167,7 +176,7 @@ async function startExport(items: CacheItem[]) {
   await run('export', async () => {
     s.summary = null
     for (const i of items) delete s.results[i.id]
-    const summary = await api.export(s.generation, items.map(i => ({ id: i.id, variant: variantOf(i) })))
+    const summary = await api.export(s.generation, items.map(i => ({ id: i.id, variant: variantOf(i), danmaku: i.danmaku > 0 && !!s.danmaku[i.id] })))
     s.summary = summary
     s.notice = `已處理 ${summary.successful + summary.partial + summary.failed}/${summary.total}：${summary.successful} 完成，${summary.partial} 部分完成，${summary.failed} 失敗，${summary.cancelled} 取消，${summary.notStarted} 未開始。`
   })
@@ -537,7 +546,8 @@ onMounted(async () => {
         <template v-if="s.items.length">
           <div class="toolbar">
             <label><input type="checkbox" :checked="allSelected" :disabled="busy || !exportableItems.length" @change="toggleAll(($event.target as HTMLInputElement).checked)" />全選可匯出項目</label>
-            <span class="muted">{{ s.items.length }} 個項目 · 已選 {{ selectedItems.length }} 部<template v-if="selectedItems.length"> · {{ mb(selectedBytes) }}</template></span>
+            <label><input type="checkbox" aria-label="全選彈幕" :checked="allDanmaku" :indeterminate="someDanmaku" :disabled="busy || !danmakuItems.length" @change="toggleAllDanmaku(($event.target as HTMLInputElement).checked)" />全選彈幕</label>
+            <span class="muted">{{ s.items.length }} 個項目 · 已選 {{ selectedItems.length }} 部<template v-if="selectedItems.length"> · {{ mb(selectedBytes) }}</template> · 已選 {{ selectedDanmaku }} 部影片的彈幕</span>
             <span class="spacer"></span>
             <button class="quiet" :disabled="busy || !s.serial" @click="rescan">重新掃描</button>
           </div>
@@ -556,8 +566,9 @@ onMounted(async () => {
                   <span v-else>{{ item.quality || '畫質未知' }}</span>
                   <span v-if="reason(item)" class="warning"> · {{ reason(item) }}</span>
                   <span v-if="!item.hasCover && !item.issue" class="muted"> · 快取沒有封面</span>
-                  <span v-if="item.exported" class="muted"> · 輸出資料夾已有同名影片，可能匯出過</span>
                 </div>
+                <div v-if="item.exported" class="meta accent exported">輸出資料夾已有同名影片，可能匯出過</div>
+                <label v-if="item.danmaku > 0" class="danmaku-option"><input v-model="s.danmaku[item.id]" type="checkbox" :aria-label="'匯出彈幕：' + item.title" :disabled="busy" /> 匯出彈幕 <span class="muted">· {{ item.danmaku.toLocaleString() }} 則</span></label>
                 <div v-if="s.results[item.id]" class="meta" :class="s.results[item.id].outcome === 'success' ? 'good' : 'warning'">{{ outcomeLabel[s.results[item.id].outcome] }}{{ resultDetail(s.results[item.id]) }}</div>
                 <div v-else-if="s.progress && s.progress.id === item.id" class="meta accent">{{ s.progress.stage }}</div>
                 <details v-if="item.inventory.length || item.variants.length > 1">

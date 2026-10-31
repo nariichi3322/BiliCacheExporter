@@ -31,7 +31,7 @@ function makePhone(dir) {
   ff(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+frag_keyframe+empty_moov', '-f', 'mp4', path.join(media, 'video.m4s')])
   ff(['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '2', '-c:a', 'aac', '-movflags', '+frag_keyframe+empty_moov', '-f', 'mp4', path.join(media, 'audio.m4s')])
   ff(['-f', 'lavfi', '-i', 'testsrc=size=640x360', '-frames:v', '1', path.join(media, 'cover.jpg')])
-  const add = (id, entry, qualities, cover, root = ROOT) => {
+  const add = (id, entry, qualities, cover, root = ROOT, danmaku = null) => {
     const remote = path.join(dir, root, id)
     fs.mkdirSync(remote, { recursive: true })
     fs.writeFileSync(path.join(remote, 'entry.json'), JSON.stringify(entry))
@@ -41,11 +41,14 @@ function makePhone(dir) {
       fs.writeFileSync(path.join(remote, q, 'index.json'), JSON.stringify({ video: [{ width: 320, height: 180, codecs: 'avc1.64000d' }] }))
     }
     if (cover) fs.copyFileSync(path.join(media, 'cover.jpg'), path.join(remote, 'cover.jpg'))
+    if (danmaku) fs.writeFileSync(path.join(remote, 'danmaku.xml'), `<?xml version="1.0" encoding="UTF-8"?><i><chatid>1</chatid><maxlimit>1000</maxlimit>${danmaku}</i>`)
   }
-  add('100/c_1', { title: '非常長的中文標題：京都散步｜雨天的鴨川與老街，從清晨一路走到夜晚的完整紀錄（含 Unicode 🎬 與 Windows 非法字元 ?*）', is_completed: true, page_data: { part: '第一集 開場' } }, ['80'], true)
+  // Same shape as a real app's danmaku.xml: scrolling, coloured top, an XML entity, and a scripted comment that is skipped.
+  const danmaku = '<state>0</state><d p="0.50000,1,25,16777215,1769259328,0,5abec846,1,3">第一則</d><d p="1.00000,5,25,16711680,1769259329,0,5abec847,2,3">置頂紅字</d><d p="1.50000,1,25,16777215,1769259330,0,5abec848,3,3">A&amp;B</d><d p="1.60000,7,25,16777215,1769259331,0,5abec849,4,3">[scripted]</d>'
+  add('100/c_1', { title: '非常長的中文標題：京都散步｜雨天的鴨川與老街，從清晨一路走到夜晚的完整紀錄（含 Unicode 🎬 與 Windows 非法字元 ?*）', is_completed: true, page_data: { part: '第一集 開場' } }, ['80'], true, ROOT, danmaku)
   add('200/c_2', { title: '多畫質影片', is_completed: true, page_data: { part: 'P2' } }, ['80', '116'], true)
   add('300/c_3', { title: '尚未下載完成', is_completed: false }, ['80'], true)
-  add('400/c_4', { title: '沒有封面的影片', is_completed: true }, ['64'], false)
+  add('400/c_4', { title: '沒有封面的影片', is_completed: true }, ['64'], false, ROOT, '<state>2</state><text>本视频弹幕功能已被关闭</text>')
   // China app: one video only it has, and the multi-quality video again with a quality the international app lacks.
   add('500/c_5', { title: '只在中國版的影片', is_completed: true }, ['80'], true, CHINA_ROOT)
   add('200/c_2', { title: '多畫質影片', is_completed: true, page_data: { part: 'P2' } }, ['64'], true, CHINA_ROOT)
@@ -233,8 +236,15 @@ await app.key('ArrowDown', 'ArrowDown', 40)
 check(await app.eval(`document.querySelector('select[aria-label^="畫質"]').value !== ''`), 'Quality can be chosen with the keyboard')
 // Quality choice + select all + export.
 await app.eval(`(() => { const s = document.querySelector('select[aria-label^="畫質"]'); const o = [...s.options].find(o => o.text.startsWith('116')); s.value = o.value; s.dispatchEvent(new Event('change')); })()`)
+// Danmaku: only the row with drawable comments offers them; ticking them never selects the video.
+const danmakuRows = await app.eval("[...document.querySelectorAll('li.row')].filter(r => r.querySelector('[aria-label^=\"匯出彈幕\"]')).map(r => r.innerText)")
+check(danmakuRows.length === 1 && danmakuRows[0].includes('非常長') && danmakuRows[0].includes('3 則'), 'Only the row with danmaku shows the box and its drawable count (disabled danmaku hidden)', JSON.stringify(danmakuRows))
+await app.eval("document.querySelector('.toolbar input[aria-label=全選彈幕]').click()")
+const toolbar = () => app.eval("document.querySelector('.toolbar').innerText")
+check(await app.eval("document.querySelector('[aria-label^=\"匯出彈幕\"]').checked && document.querySelectorAll('[aria-label^=\"選取 \"]:checked').length === 0") && (await toolbar()).includes('已選 0 部影片的彈幕'), 'Select all danmaku ticks danmaku without selecting videos', await toolbar())
 await app.eval("document.querySelector('.toolbar input[type=checkbox]').click()")
-check(await app.eval("document.querySelectorAll('li.row input[type=checkbox]:checked').length === 4"), 'Select all covers only the 4 exportable rows')
+check(await app.eval("document.querySelectorAll('[aria-label^=\"選取 \"]:checked').length === 4"), 'Select all covers only the 4 exportable rows')
+check((await toolbar()).includes('已選 1 部影片的彈幕'), 'Toolbar counts videos whose danmaku will be exported', await toolbar())
 await app.click('匯出所選')
 check(await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('匯出')", 5000), 'Export shows real stages')
 await app.shot('04-exporting-dark')
@@ -254,9 +264,19 @@ check(chinaOnly && pulls.some(p => p.includes('tv.danmaku.bili/download/500/c_5/
 check(calls(dir).filter(c => c[2] === 'shell').every(c => /^(pm list|find |stat -c|cat )/.test(c[3])), 'Phone only received read-only commands')
 const resultText = await app.text()
 check(resultText.includes('部分完成') && resultText.includes('手機快取中沒有封面圖片'), 'Missing cover reported as partial with reason')
+// Status colors must beat the muted .meta default in the real cascade (unit tests only see class names).
+const metaColorDiffers = sel => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); const m = document.querySelector('li.row .meta:not(.good):not(.warning):not(.accent)'); return !!e && !!m && getComputedStyle(e).color !== getComputedStyle(m).color })()`
+check(await app.eval(metaColorDiffers('li.row .meta.warning')), 'Partial result line keeps its warning color')
 const extracted = path.join(work, 'extracted.jpg')
 run(ffmpeg, ['-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', path.join(dir, 'out', long), '-map', '0:v:1', '-c', 'copy', '-f', 'image2', extracted])
 check(Buffer.compare(fs.readFileSync(extracted), fs.readFileSync(path.join(work, 'media', 'cover.jpg'))) === 0, 'Embedded cover equals the original bytes')
+const subtitles = () => fs.readdirSync(path.join(dir, 'out')).filter(n => n.endsWith('.ass')).sort()
+const ass = fs.existsSync(path.join(dir, 'out', long.replace(/\.mp4$/, '.ass'))) ? fs.readFileSync(path.join(dir, 'out', long.replace(/\.mp4$/, '.ass')), 'utf8') : ''
+const lines = ass.split('\n').filter(l => l.startsWith('Dialogue:'))
+check(subtitles().length === 1 && lines.length === 3 && lines[0].endsWith('第一則') && lines[1].includes('\\an8') && lines[1].includes('\\c&H0000FF&') && lines[2].endsWith('A&B'), 'Ticked danmaku saved as a same-name .ass beside the MP4', subtitles().join(' | '))
+const danmakuPulls = () => calls(dir).filter(c => c[2] === 'pull' && c[3].endsWith('danmaku.xml')).map(c => c[3])
+check(danmakuPulls().length === 1 && danmakuPulls()[0].includes('100/c_1/'), 'Only the ticked row with danmaku transfers danmaku.xml', danmakuPulls().join(' | '))
+await app.eval("document.querySelector('.toolbar input[aria-label=全選彈幕]').click()") // untick all danmaku for the cancel/retry run
 
 // Cancel during transfer, then manual retry.
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/pull-delay-ms'), '1500')
@@ -272,6 +292,7 @@ fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/pull-delay-ms'), '0')
 check(await app.click('重試未完成項目'), 'Retry button offered for cancelled/partial items')
 check(await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('匯出結束') || document.querySelector('.progress-box')?.innerText.includes('匯出完成')", 120000), 'Retry finishes')
 check(outputs(dir).length >= 5 && outputs(dir).some(f => f.includes('(1)')), 'Retry adds numbered files and never overwrites', outputs(dir).join(' | '))
+check(subtitles().length === 1 && danmakuPulls().length === 1, 'Unticked danmaku are neither transferred nor written', subtitles().join(' | '))
 
 // Theme, settings page, logs, narrow viewport.
 await app.eval("document.querySelector('button[aria-label=切換淺色模式]').click()")
@@ -339,6 +360,7 @@ check(saved.SettingsVersion === 2, 'Settings saved with the current version')
 // Unplug: export is refused before transfer; reconnect does not resume.
 await app.click('連線')
 await app.waitFor("document.querySelectorAll('li.row').length === 5")
+check(await app.eval(metaColorDiffers('li.row .meta.exported')), 'Rescan marks exported rows on their own line in the accent color')
 await app.eval("document.querySelector('li.row input[type=checkbox]').click()")
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/devices.txt'), 'List of devices attached\n')
 const pullsBefore = calls(dir).filter(c => c[2] === 'pull').length

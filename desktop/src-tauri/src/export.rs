@@ -275,11 +275,42 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
             (partial.clone(), Some(e.to_string()))
         }
     };
+    // Danmaku are an extra: a missing or unreadable file never fails or downgrades the export.
+    let danmaku_result: Res<Option<String>> = (|| {
+        // Zero also when the user did not tick danmaku for this row.
+        if req.item.danmaku == 0 {
+            return Ok(None);
+        }
+        progress(None, "轉換彈幕");
+        let local = temp.join("danmaku.xml");
+        adb.pull(req.serial, &format!("{remote}/danmaku.xml"), &s(&local), cancel, &mut |_| {})?;
+        let xml = std::fs::read(&local).map_err(|e| Error::Failed(format!("無法讀取彈幕檔：{e}")))?;
+        Ok(crate::danmaku::to_ass(&String::from_utf8_lossy(&xml)))
+    })();
+    let danmaku = match danmaku_result {
+        Ok(ass) => ass,
+        Err(Error::Cancelled) => return Err(Error::Cancelled),
+        Err(e) => {
+            runner.log(&format!("彈幕轉換失敗，略過：{e}"));
+            None
+        }
+    };
     cancel.check()?;
     for i in 0..10_000 {
         let target: PathBuf = Path::new(req.output).join(output_name(&req.item.title, i));
         match move_no_replace(&chosen, &target) {
             Ok(()) => {
+                if let Some(ass) = &danmaku {
+                    // Same name as the MP4 so players load it automatically; never replaces an existing file.
+                    let written = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(target.with_extension("ass"))
+                        .and_then(|mut f| std::io::Write::write_all(&mut f, ass.as_bytes()));
+                    if let Err(e) = written {
+                        runner.log(&format!("無法寫入彈幕字幕，略過：{e}"));
+                    }
+                }
                 progress(Some(1.0), if cover_error.is_none() { "完成" } else { "部分完成：缺封面" });
                 drop(job);
                 return Ok(ExportResult { path: s(&target), cover_error });
