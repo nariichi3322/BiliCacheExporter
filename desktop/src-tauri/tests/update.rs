@@ -66,6 +66,7 @@ fn accent_defaults_to_blue_and_unknown_values_fall_back() {
         theme: s.theme.clone(),
         accent: accent.into(),
         check_updates: true,
+        full_decode: false,
     };
     assert_eq!(h.app.save_settings(input("pink")).unwrap().accent, "pink");
     assert!(std::fs::read_to_string(dir.join("settings.json")).unwrap().contains(r#""Accent": "pink""#));

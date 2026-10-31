@@ -12,6 +12,7 @@ export interface Settings {
   Theme: 'dark' | 'light'
   Accent: string
   CheckUpdates: boolean
+  FullDecode: boolean
   SkipVersion: string
   [extra: string]: unknown
 }
@@ -32,6 +33,7 @@ export interface CacheItem {
   hasCover: boolean
   inventory: FileInfo[]
   source: string
+  exported: boolean
 }
 export interface Package { name: string; title: string; version: string; publisher: string; url: string; sha256: string; size: number; license: string }
 export interface Snapshot {
@@ -55,7 +57,7 @@ export interface BatchProgress { id: number; index: number; total: number; compl
 export interface Summary { total: number; successful: number; partial: number; failed: number; cancelled: number; notStarted: number }
 export interface DownloadProgress { name: string; stage: string; bytes: number; total: number }
 export interface CmdError { message: string; cancelled: boolean; missing: string[] }
-export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string; accent: string; checkUpdates: boolean }
+export interface SettingsInput { adb: string; ffmpeg: string; ffprobe: string; output: string; temp: string; theme: string; accent: string; checkUpdates: boolean; fullDecode: boolean }
 export interface Release { version: string; notes: string; newer: boolean }
 
 export type AppEvent =

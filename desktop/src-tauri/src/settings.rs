@@ -26,6 +26,9 @@ pub struct Settings {
     pub accent: String,
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// Fully decode each exported MP4; off by default because it takes about as long as reading the whole video.
+    #[serde(default)]
+    pub full_decode: bool,
     #[serde(default)]
     pub skip_version: String,
     #[serde(default)]
@@ -70,6 +73,7 @@ impl Settings {
             theme: dark(),
             accent: blue(),
             check_updates: true,
+            full_decode: false,
             skip_version: String::new(),
             settings_version: VERSION,
             extra: Map::new(),
@@ -82,7 +86,7 @@ pub fn load(dir: &Path) -> Res<Settings> {
     let path = dir.join(FILE);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Settings::defaults()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(fresh(dir)),
         Err(e) => return fail(format!("無法讀取設定檔 {}：{e}", path.display())),
     };
     let mut settings: Settings = match serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')) {
@@ -119,9 +123,23 @@ pub fn backup_and_reset(dir: &Path) -> Res<Settings> {
         let aside = dir.join(format!("settings.corrupt-{}.json", uuid::Uuid::new_v4().simple()));
         std::fs::rename(&path, &aside).map_err(|e| crate::Error::Failed(format!("無法備份損壞的設定檔：{e}")))?;
     }
-    let settings = Settings::defaults();
+    let settings = fresh(dir);
     save(dir, &settings)?;
     Ok(settings)
+}
+
+/// Defaults for a first run, with each tool found beside the program, else on PATH, else left empty.
+fn fresh(dir: &Path) -> Settings {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let find = |exe: &str| find_tool(dir, &path, exe);
+    Settings { adb: find("adb.exe"), ffmpeg: find("ffmpeg.exe"), ffprobe: find("ffprobe.exe"), ..Settings::defaults() }
+}
+
+fn find_tool(dir: &Path, path: &std::ffi::OsStr, exe: &str) -> String {
+    if dir.join(exe).is_file() {
+        return exe.into();
+    }
+    std::env::split_paths(path).map(|p| p.join(exe)).find(|p| p.is_absolute() && p.is_file()).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Relative tool paths are portable: they resolve against the program folder, never PATH.
@@ -155,5 +173,21 @@ mod tests {
         assert_eq!(portable(dir, r"d:\apps\bili\tools\adb\adb.exe"), r"tools\adb\adb.exe");
         assert_eq!(portable(dir, r"D:\Apps\BiliOther\adb.exe"), r"D:\Apps\BiliOther\adb.exe");
         assert_eq!(resolve(dir, r"tools\adb\adb.exe"), Path::new(r"D:\Apps\Bili\tools\adb\adb.exe"));
+    }
+
+    #[test]
+    fn tools_are_found_beside_the_program_then_on_path() {
+        let root = std::env::temp_dir().join(format!("bili-find-{}", uuid::Uuid::new_v4().simple()));
+        let (program, bin) = (root.join("program"), root.join("bin"));
+        std::fs::create_dir_all(&program).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        for f in [program.join("ffmpeg.exe"), bin.join("ffmpeg.exe"), bin.join("ffprobe.exe")] {
+            std::fs::write(f, b"").unwrap();
+        }
+        let path = std::env::join_paths([root.join("missing"), bin.clone()]).unwrap();
+        assert_eq!(find_tool(&program, &path, "ffmpeg.exe"), "ffmpeg.exe", "beside the program wins, stored relative");
+        assert_eq!(find_tool(&program, &path, "ffprobe.exe"), bin.join("ffprobe.exe").to_string_lossy());
+        assert_eq!(find_tool(&program, &path, "adb.exe"), "");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

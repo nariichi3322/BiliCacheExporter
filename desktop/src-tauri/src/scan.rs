@@ -57,6 +57,8 @@ pub struct CacheItem {
     pub inventory: Vec<FileInfo>,
     /// Which app's cache the row came from, e.g. "中國版（tv.danmaku.bili）".
     pub source: String,
+    /// The output folder already holds `<title>.mp4` at scan time (name match only).
+    pub exported: bool,
 }
 
 impl CacheItem {

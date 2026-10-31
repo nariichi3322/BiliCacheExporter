@@ -54,6 +54,7 @@ pub struct Tools<'a> {
     pub ffprobe: &'a Path,
     pub output: &'a str,
     pub temp: &'a str,
+    pub full_decode: bool,
 }
 
 /// Exports one item at a time; a failure moves on to the next item, cancellation stops the queue.
@@ -81,7 +82,16 @@ pub fn run(
             break;
         }
         let completed = summary.successful + summary.partial + summary.failed;
-        let request = Request { serial, item, variant, ffmpeg: tools.ffmpeg, ffprobe: tools.ffprobe, output: tools.output, temp: tools.temp };
+        let request = Request {
+            serial,
+            item,
+            variant,
+            ffmpeg: tools.ffmpeg,
+            ffprobe: tools.ffprobe,
+            output: tools.output,
+            temp: tools.temp,
+            full_decode: tools.full_decode,
+        };
         let result = export(runner, adb, storage, &request, cancel, &mut |fraction, stage| {
             if !cancel.is_cancelled() {
                 on_progress(BatchProgress {
