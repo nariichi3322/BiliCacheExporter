@@ -1,5 +1,6 @@
 //! Turns the app's cached danmaku.xml into an ASS subtitle shown beside the MP4.
 use regex::{Captures, Regex};
+use std::sync::LazyLock;
 
 const WIDTH: f64 = 1920.0;
 const HEIGHT: f64 = 1080.0;
@@ -67,8 +68,8 @@ pub fn to_ass(xml: &str) -> Option<String> {
 
 /// (time, kind, font size, RGB color, text) of every drawable comment, in file order.
 fn comments(xml: &str) -> Vec<(f64, Kind, f64, u32, String)> {
-    Regex::new(r#"<d p="([^"]*)">([^<]*)</d>"#)
-        .unwrap()
+    static COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<d p="([^"]*)">([^<]*)</d>"#).unwrap());
+    COMMENT
         .captures_iter(xml)
         .filter_map(|c| {
             let p: Vec<&str> = c[1].split(',').collect();
@@ -107,8 +108,9 @@ fn fixed_lane(ends: &[f64], time: f64) -> usize {
 
 /// XML entities decoded, then made safe for one ASS line: braces and backslashes would start override tags.
 fn text(raw: &str) -> String {
-    let entity = Regex::new(r"&(#x[0-9a-fA-F]+|#[0-9]+|[a-z]+);").unwrap();
-    let decoded = entity.replace_all(raw, |c: &Captures| {
+    // Compiled once: this runs for every comment of every scanned item.
+    static ENTITY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"&(#x[0-9a-fA-F]+|#[0-9]+|[a-z]+);").unwrap());
+    let decoded = ENTITY.replace_all(raw, |c: &Captures| {
         let name = &c[1];
         let ch = match name {
             "lt" => Some('<'),
