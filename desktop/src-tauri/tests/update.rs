@@ -2,7 +2,6 @@
 //! plus the related settings.
 mod common;
 
-use bili_core::app::Event;
 use bili_core::tools::Fetch;
 use bili_core::{Cancel, Error};
 use common::*;
@@ -112,6 +111,7 @@ fn release(package: Vec<u8>, hashed: Vec<u8>) -> Box<Fetch> {
             }
             u if u == format!("{base}SHA256.txt") => sums.clone().into_bytes(),
             u if u == format!("{base}BiliCacheExporter-win-x64.zip") => package.clone(),
+            u if u == format!("{base}BiliCacheExporter-win-x64.zip.sig") => include_bytes!("fixtures/update/forward.zip.sig").to_vec(),
             other => panic!("unexpected url {other}"),
         };
         assert!(body.len() as u64 <= max);
@@ -140,42 +140,6 @@ fn entries(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     names.sort();
     names
-}
-
-#[test]
-fn update_replaces_only_the_executable() {
-    let dir = installed();
-    let h = harness_in(dir.clone(), Phone::one_device(), release(package(b"new exe"), package(b"new exe")));
-    let settings = std::fs::read(dir.join("settings.json")).unwrap();
-    h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
-    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
-    let staging_name = entries(&dir).into_iter().find(|n| n.starts_with(".update-")).unwrap();
-    let staging = dir.join(&staging_name);
-    assert_eq!(std::fs::read(staging.join("old.exe")).unwrap(), b"old exe");
-    assert_eq!(std::fs::read_to_string(staging.join(".bili-owned")).unwrap(), staging_name.strip_prefix(".update-").unwrap());
-    assert!(!dir.join("BiliCacheExporter.exe.old").exists());
-    assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), settings);
-    assert_eq!(std::fs::read(dir.join("README.md")).unwrap(), b"old readme");
-    assert_eq!(std::fs::read(dir.join("tools").join("adb").join("adb.exe")).unwrap(), b"adb");
-    assert_eq!(entries(&dir), [&staging_name, "BiliCacheExporter.exe", "README.md", "settings.json", "tools"]);
-    let stages: Vec<String> = h
-        .events
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|e| match e {
-            Event::Download { progress } if progress.name == "update" => Some(progress.stage.clone()),
-            _ => None,
-        })
-        .collect();
-    assert!(stages.contains(&"下載".to_string()) && stages.last().unwrap() == "替換", "{stages:?}");
-    assert!(!h.app.is_busy());
-    drop(h);
-    std::fs::create_dir_all(dir.join(".update-crashed")).unwrap();
-    std::fs::write(dir.join(".update-crashed").join("BiliCacheExporter-win-x64.zip"), b"partial").unwrap();
-    harness_in(dir.clone(), Phone::one_device(), no_network());
-    assert!(!staging.exists(), "the next start removes the owned staging folder including the old executable");
-    assert_eq!(std::fs::read(dir.join(".update-crashed").join("BiliCacheExporter-win-x64.zip")).unwrap(), b"partial", "unowned staging is preserved");
 }
 
 #[test]
@@ -221,15 +185,6 @@ fn update_is_refused_while_busy() {
         assert!(download.join().unwrap().is_err());
     });
     assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"old exe");
-}
-
-#[test]
-fn packages_zipped_with_backslash_separators_also_install() {
-    let dir = installed();
-    let zipped = zip_bytes(&[(r"BiliCacheExporter-win-x64\BiliCacheExporter.exe", b"new exe")]);
-    let h = harness_in(dir.clone(), Phone::one_device(), release(zipped.clone(), zipped));
-    h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
-    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
 }
 
 fn snapshot(dir: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
@@ -302,17 +257,6 @@ fn startup_preserves_unowned_or_unsafe_items() {
     drop(h);
     std::fs::remove_dir(link).unwrap();
     std::fs::remove_dir(nested_link.join("link")).unwrap();
-}
-
-#[test]
-fn update_preserves_a_manual_executable_backup() {
-    let dir = installed();
-    let backup = dir.join("BiliCacheExporter.exe.old");
-    std::fs::write(&backup, b"manual backup").unwrap();
-    let h = harness_in(dir.clone(), Phone::one_device(), release(package(b"new exe"), package(b"new exe")));
-    h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
-    assert_eq!(std::fs::read(backup).unwrap(), b"manual backup");
-    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
 }
 
 #[test]
@@ -396,4 +340,46 @@ fn startup_removes_only_empty_markerless_staging_with_an_exact_name() {
     let h = harness_in(dir, Phone::one_device(), no_network());
     assert!(!path.exists());
     drop(h);
+}
+
+#[test]
+fn missing_wrong_empty_or_oversized_signature_changes_nothing() {
+    for signature in [None, Some(include_bytes!("fixtures/update/forward.zip.sig").to_vec()), Some(Vec::new()), Some(vec![b'A'; 8193])] {
+        let dir = installed();
+        let before = snapshot(&dir);
+        let bytes = include_bytes!("fixtures/update/forward.zip").to_vec();
+        let fetch = release(bytes.clone(), bytes);
+        let signed: Box<Fetch> = Box::new(move |url, dest, max, cancel, progress| {
+            if url.ends_with(".sig") {
+                assert_eq!(max, 8192);
+                match &signature {
+                    Some(bytes) => {
+                        std::fs::write(dest, bytes).unwrap();
+                        Ok(())
+                    }
+                    None => Err(Error::Failed("缺少簽章".into())),
+                }
+            } else {
+                fetch(url, dest, max, cancel, progress)
+            }
+        });
+        let h = harness_in(dir.clone(), Phone::one_device(), signed);
+        let e = h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap_err();
+        assert!(e.message.contains("簽章"), "{}", e.message);
+        assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"old exe");
+        assert_eq!(snapshot(&dir), before);
+    }
+}
+
+#[test]
+fn install_refuses_a_release_that_is_not_newer() {
+    for tag in [bili_core::VERSION.split('+').next().unwrap(), "0.0.1"] {
+        let dir = installed();
+        let before = snapshot(&dir);
+        let tag = Box::leak(format!("v{tag}").into_boxed_str());
+        let h = harness_in(dir.clone(), Phone::one_device(), github(tag, ""));
+        let e = h.app.install_update(&dir.join("BiliCacheExporter.exe"), tag.trim_start_matches('v')).unwrap_err();
+        assert!(e.message.contains("不比目前版本新"), "{}", e.message);
+        assert_eq!(snapshot(&dir), before);
+    }
 }

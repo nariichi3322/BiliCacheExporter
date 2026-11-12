@@ -92,6 +92,11 @@ try {
     $marked = [IO.File]::ReadAllBytes((Join-Path $package 'BiliCacheExporter.exe')) + [Text.Encoding]::ASCII.GetBytes("`nBILI-E2E-UPDATE-MARKER`n")
     [IO.File]::WriteAllBytes((Join-Path $updatePackage 'BiliCacheExporter.exe'), $marked)
     $null = Complete-Package $updatePackage $commit $dirty $version
+    $updateZip = Join-Path $updateRelease 'BiliCacheExporter-win-x64.zip'
+    $testKey = Join-Path $desktop 'e2e\update-test-key\test-only.key'
+    $testPassword = (Get-Content -LiteralPath (Join-Path $desktop 'e2e\update-test-key\password.txt') -Raw).Trim()
+    Invoke-Checked 'npx' @('tauri', 'signer', 'sign', '-f', $testKey, '-p', $testPassword, '--app-version', '99.0.0', $updateZip)
+    if (!(Test-Path -LiteralPath "$updateZip.sig")) { throw 'Test update signature was not generated.' }
 
     # Integrated flows on the packaged EXE: fake phone + real FFmpeg/FFprobe.
     $e2e = Join-Path $run 'e2e'

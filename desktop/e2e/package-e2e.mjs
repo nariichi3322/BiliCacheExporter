@@ -460,6 +460,7 @@ if (updateRelease) {
   await old.click('更新')
   const exited = await new Promise(r => { old.child.once('exit', () => r(true)); setTimeout(() => r(old.child.exitCode !== null), 60000) })
   check(exited, 'Old process exits after installing the update')
+  check(served.some(url => url.endsWith('.sig')), 'Update requests the package signature', served.join(' '))
   let newPid
   for (let i = 0; i < 100 && !newPid; i++) {
     newPid = pidsOf(target).find(p => p !== oldPid)

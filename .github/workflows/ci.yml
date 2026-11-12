@@ -133,13 +133,37 @@ jobs:
           $zip = Complete-Package $package $env:GITHUB_SHA $false $version
           Write-Output "Built $version, ZIP SHA-256 $((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash)"
 
+      - name: Sign update package
+        timeout-minutes: 5
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_KEY_PASSWORD }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY) -or [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) { throw 'Update signing key or password is empty' }
+          $zip = Join-Path $env:RUNNER_TEMP 'release\BiliCacheExporter-win-x64.zip'
+          npx tauri signer sign --app-version $env:VERSION $zip
+          if ($LASTEXITCODE) { throw 'Signing the update package failed' }
+          if (!(Test-Path -LiteralPath "$zip.sig")) { throw 'Update signature was not generated' }
+
+      # The shipped production key must accept what is about to be published: catches a wrong secret before users do.
+      - name: Verify update package
+        working-directory: desktop/src-tauri
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'release\BiliCacheExporter-win-x64.zip'
+          cargo run --release --example verify_update -- $zip "$zip.sig" $env:VERSION
+          if ($LASTEXITCODE) { throw 'Verifying the update package failed' }
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.check.outputs.version }}
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'release'
-          $assets = (Join-Path $out 'BiliCacheExporter-win-x64.zip'), (Join-Path $out 'SHA256.txt')
+          $assets = (Join-Path $out 'BiliCacheExporter-win-x64.zip'), (Join-Path $out 'SHA256.txt'), (Join-Path $out 'BiliCacheExporter-win-x64.zip.sig')
           $sha = "SHA-256: ``$((Get-Content (Join-Path $out 'SHA256.txt')).Split(' ')[0])``"
           # Notes are the merged PR's "## Release notes" section, else its whole body; a direct push (no PR) falls back to generated notes.
           $body = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:GITHUB_SHA/pulls" --jq '.[0].body // ""') -join "`n"
