@@ -1,5 +1,6 @@
 # Checks every PR and main push; publishes a release when main carries a version that has no v<version> tag yet.
 # Release flow: bump the version on a branch, run desktop/package.ps1 locally (GUI checks CI does not run), PR, merge.
+# Actions are pinned to a commit SHA (a tag or branch can be moved upstream); change the SHA and its comment together.
 name: CI
 
 on:
@@ -15,8 +16,10 @@ jobs:
   check:
     runs-on: windows-latest
     permissions:
-      contents: write # create the release and its tag
-      pull-requests: read # read the merged PR body for release notes
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     defaults:
       run:
         shell: pwsh
@@ -28,7 +31,7 @@ jobs:
       ACTIONLINT_URL: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip
       ACTIONLINT_SHA256: 6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Lint workflows
         run: |
@@ -55,23 +58,24 @@ jobs:
           "release=$($release.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           Write-Output "Version $tauri; tag exists: $tagged; release: $release"
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      # The action's stable branch; it still installs whatever the current stable Rust is.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: desktop/src-tauri
 
       - name: Cache FFmpeg
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.FFMPEG_DIR }}
           key: ffmpeg-${{ env.FFMPEG_SHA256 }}
@@ -90,9 +94,34 @@ jobs:
           $ffmpeg = (Get-ChildItem $env:FFMPEG_DIR -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
           ./desktop/check.ps1 -FFmpeg $ffmpeg
 
+  # The only job that may write to the repository. It builds from a clean runner without restoring any cache.
+  release:
+    needs: check
+    if: github.event_name == 'push' && needs.check.outputs.release == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write # create the release and its tag
+      pull-requests: read # read the merged PR body for release notes
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: |
+          npm ci
+          if ($LASTEXITCODE) { throw 'npm ci failed' }
+
       # Same package shape as desktop/package.ps1, without its GUI verification.
       - name: Build package
-        if: steps.version.outputs.release == 'true'
         working-directory: desktop
         run: |
           npx tauri build
@@ -105,10 +134,9 @@ jobs:
           Write-Output "Built $version, ZIP SHA-256 $((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash)"
 
       - name: Publish release
-        if: steps.version.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v${{ steps.version.outputs.version }}
+          TAG: v${{ needs.check.outputs.version }}
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'release'
           $assets = (Join-Path $out 'BiliCacheExporter-win-x64.zip'), (Join-Path $out 'SHA256.txt')
