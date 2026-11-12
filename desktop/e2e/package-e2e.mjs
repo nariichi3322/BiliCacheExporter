@@ -449,6 +449,14 @@ if (updateRelease) {
   check(await old.waitFor("document.querySelector('[role=dialog]')?.innerText.includes('有新版本 99.0.0')"), 'Startup check finds the newer release and shows its notes', served.join(' '))
   await old.shot('14-update-prompt-dark')
   const oldPid = old.child.pid
+  const backup = target + '.old'
+  const keep = path.join(dir, '.update-keep')
+  fs.writeFileSync(backup, 'manual executable backup')
+  fs.mkdirSync(keep)
+  fs.writeFileSync(path.join(keep, 'keep'), 'unowned staging')
+  const backupBefore = fs.readFileSync(backup)
+  const keepBefore = fs.readFileSync(path.join(keep, 'keep'))
+  const stagingBefore = fs.readdirSync(dir).filter(n => n.startsWith('.update-')).sort()
   await old.click('更新')
   const exited = await new Promise(r => { old.child.once('exit', () => r(true)); setTimeout(() => r(old.child.exitCode !== null), 60000) })
   check(exited, 'Old process exits after installing the update')
@@ -471,11 +479,11 @@ if (updateRelease) {
     await fresh.shot('15-after-update-dark')
     let cleaned = false
     for (let i = 0; i < 100 && !cleaned; i++) {
-      cleaned = !fs.existsSync(target + '.old')
+      cleaned = JSON.stringify(fs.readdirSync(dir).filter(n => n.startsWith('.update-')).sort()) === JSON.stringify(stagingBefore)
       if (!cleaned) await sleep(200)
     }
-    check(cleaned, 'The previous EXE (.old) is removed after the restart')
-    check(!fs.readdirSync(dir).some(n => n.startsWith('.update-')), 'No update staging folder is left behind')
+    check(cleaned, 'Only the pre-placed update staging folders remain after the restart')
+    check(Buffer.compare(fs.readFileSync(backup), backupBefore) === 0 && Buffer.compare(fs.readFileSync(path.join(keep, 'keep')), keepBefore) === 0, 'Manual executable backup and unowned staging content are untouched')
     await fresh.close()
   } else {
     check(false, 'Restarted app window reachable over DevTools')

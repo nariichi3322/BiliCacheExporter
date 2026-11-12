@@ -481,7 +481,7 @@ impl App {
     pub fn install_update(&self, exe: &Path, version: &str) -> Out<()> {
         self.writable()?;
         let (_busy, cancel) = self.begin().map_err(|_| err("匯出完成後才能更新。"))?;
-        update::install(exe, version, &*self.fetch, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
+        update::install(exe, version, &*self.fetch, &self.log, &cancel, &mut |progress| (self.emit)(Event::Download { progress }))?;
         self.log.log(&format!("已更新到 {version}，重新啟動中。"));
         Ok(())
     }
