@@ -2,6 +2,8 @@ use crate::log::Logger;
 use crate::storage::{ensure_writable, guard};
 use crate::tools::{rename_retry, DownloadProgress, Fetch};
 use crate::{fail, Cancel, Error, Res};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use minisign_verify::{PublicKey, Signature};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
@@ -27,9 +29,49 @@ const ASSET: &str = "BiliCacheExporter-win-x64.zip";
 const SUMS: &str = "SHA256.txt";
 const EXE_IN_ASSET: &str = "BiliCacheExporter-win-x64/BiliCacheExporter.exe";
 
+const PRODUCTION_KEY: &str =
+    "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1NDg4MTMwOUEwNDZBMEIKUldRTGFnU2FNSUZJTmI4VVJEK05lWEZ3L1JNaTY4TTgvdkV5Q1ZFQWN2aU5Ybmx6ZlFvTkhDTDAK";
+const TEST_KEY: &str =
+    "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQxQ0E3QTREOUVCMTA0ODEKUldTQkJMR2VUWHJLMGNNa3FQbll6cGdERnA1dGFvN24wakZ5N2ZhcmEvd1F2Z0p6ejJzM3FZRSsK";
+
 /// An override of the GitHub hosts is honoured only for a local test server.
-fn local(source: Option<&str>) -> Option<String> {
-    source.filter(|s| *s == "http://127.0.0.1" || s.starts_with("http://127.0.0.1:")).map(|s| s.trim_end_matches('/').into())
+pub(crate) fn local(source: Option<&str>) -> Option<String> {
+    let source = source?;
+    let origin = source.strip_suffix('/').unwrap_or(source);
+    let authority = origin.strip_prefix("http://")?;
+    if authority != "127.0.0.1" {
+        let port = authority.strip_prefix("127.0.0.1:")?;
+        if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) || !port.parse::<u16>().is_ok_and(|n| n > 0) {
+            return None;
+        }
+    }
+    Some(origin.into())
+}
+
+/// The only key an update from `source` may be signed with: the public test key for a local test server, never otherwise.
+pub fn update_key(source: Option<&str>) -> &'static str {
+    if local(source).is_some() {
+        TEST_KEY
+    } else {
+        PRODUCTION_KEY
+    }
+}
+
+/// Checks both the complete ZIP and its authenticated version before extraction.
+pub fn verify(bytes: &[u8], signature: &str, public_key: &str, version: &str) -> Res<()> {
+    let invalid = |e| Error::Failed(format!("更新簽章驗證失敗：{e}"));
+    let decode = |text: &str| -> Res<String> {
+        let bytes = STANDARD.decode(text.trim()).map_err(|e| invalid(e.to_string()))?;
+        String::from_utf8(bytes).map_err(|e| invalid(e.to_string()))
+    };
+    let key = PublicKey::decode(&decode(public_key)?).map_err(|e| invalid(e.to_string()))?;
+    let sig = Signature::decode(&decode(signature)?).map_err(|e| invalid(e.to_string()))?;
+    key.verify(bytes, &sig, false).map_err(|e| invalid(e.to_string()))?;
+    let signed = sig.trusted_comment().split('\t').find_map(|field| field.strip_prefix("version:")).and_then(parse);
+    if signed.is_none() || signed != parse(version) {
+        return fail("更新簽章的版本缺失或與要安裝的版本不符，已拒絕安裝。");
+    }
+    Ok(())
 }
 
 pub fn api_origin(source: Option<&str>) -> String {
@@ -50,12 +92,12 @@ pub fn parse(version: &str) -> Option<(u64, u64, u64)> {
 
 /// Reads the latest published release (GitHub already excludes drafts and pre-releases).
 pub fn check(fetch: &Fetch, current: &str) -> Res<Release> {
-    latest(fetch, current).map(|(release, _)| release).map_err(|e| Error::Failed(format!("檢查更新失敗：{e}")))
+    latest(fetch, current, &api_origin(env_source().as_deref())).map(|(release, _)| release).map_err(|e| Error::Failed(format!("檢查更新失敗：{e}")))
 }
 
 /// The release and the size of its package asset (0 when the release has none).
-fn latest(fetch: &Fetch, current: &str) -> Res<(Release, u64)> {
-    let url = format!("{}/repos/{REPO}/releases/latest", api_origin(env_source().as_deref()));
+fn latest(fetch: &Fetch, current: &str, origin: &str) -> Res<(Release, u64)> {
+    let url = format!("{origin}/repos/{REPO}/releases/latest");
     let dest = std::env::temp_dir().join(format!("bili-release-{}.json", uuid::Uuid::new_v4().simple()));
     let result = fetch(&url, &dest, 1 << 20, &Cancel::default(), &mut |_| {}).and_then(|()| read_release(&dest, current));
     let _ = std::fs::remove_file(&dest);
@@ -144,7 +186,7 @@ pub fn clean_old(dir: &Path) {
     });
 }
 
-/// Downloads `version`, verifies it against the release's SHA256.txt and swaps it in for `exe`.
+/// Downloads `version`, verifies its SHA-256, signature and signed version, then swaps it in for `exe`.
 /// Only the executable changes; settings, tools and every other file stay as they are.
 pub fn install(exe: &Path, version: &str, fetch: &Fetch, log: &Logger, cancel: &Cancel, progress: &mut dyn FnMut(DownloadProgress)) -> Res<()> {
     let dir = exe.parent().ok_or_else(|| Error::Failed("找不到程式資料夾。".into()))?;
@@ -185,7 +227,13 @@ fn with_staging(dir: &Path, log: &Logger, operation: impl FnOnce(&Path) -> Res<(
 }
 
 fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, cancel: &Cancel, progress: &mut dyn FnMut(DownloadProgress)) -> Res<()> {
-    let (release, size) = latest(fetch, crate::VERSION)?;
+    // One reading of the environment decides both where to download from and which key must have signed it.
+    let source = local(env_source().as_deref());
+    let key = update_key(source.as_deref());
+    let (release, size) = latest(fetch, crate::VERSION, source.as_deref().unwrap_or("https://api.github.com"))?;
+    if !release.newer {
+        return fail("更新版本不比目前版本新，已拒絕安裝。");
+    }
     if release.version != version {
         return fail(format!("最新版本已變為 {}，請重新檢查更新。", release.version));
     }
@@ -193,7 +241,7 @@ fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, canc
         return fail(format!("版本 {version} 沒有提供 {ASSET}。"));
     }
     let mut report = |stage: &str, bytes: u64| progress(DownloadProgress { name: "update".into(), stage: stage.into(), bytes, total: size });
-    let base = format!("{}/{REPO}/releases/download/v{version}", local(env_source().as_deref()).unwrap_or_else(|| "https://github.com".into()));
+    let base = format!("{}/{REPO}/releases/download/v{version}", source.as_deref().unwrap_or("https://github.com"));
     report("下載", 0);
     let sums = staging.join(SUMS);
     fetch(&format!("{base}/{SUMS}"), &sums, 64 * 1024, cancel, &mut |_| {})?;
@@ -206,6 +254,13 @@ fn install_staged(exe: &Path, staging: &Path, version: &str, fetch: &Fetch, canc
     if format!("{:x}", Sha256::digest(&bytes)) != expected {
         return fail("下載檔案的 SHA-256 與發行記錄不符，已拒絕安裝。請重試或改為手動下載。");
     }
+    let signature = staging.join(format!("{ASSET}.sig"));
+    fetch(&format!("{base}/{ASSET}.sig"), &signature, 8 * 1024, cancel, &mut |_| {})?;
+    let signature = std::fs::read(&signature)?;
+    if signature.len() > 8 * 1024 {
+        return fail("更新簽章超過大小上限，已拒絕安裝。");
+    }
+    verify(&bytes, std::str::from_utf8(&signature).map_err(|e| Error::Failed(format!("更新簽章無法讀取：{e}")))?, key, version)?;
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| Error::Failed(format!("壓縮檔無法讀取：{e}")))?;
     // Windows PowerShell 5's Compress-Archive writes `\` separators; pwsh (the release workflow) writes `/`.
     let index = (0..zip.len())
@@ -343,10 +398,63 @@ mod tests {
 
     #[test]
     fn override_accepts_only_the_local_test_server() {
-        assert_eq!(api_origin(None), "https://api.github.com");
-        assert_eq!(api_origin(Some("http://127.0.0.1:8123/")), "http://127.0.0.1:8123");
-        for bad in ["https://evil.example", "http://127.0.0.1.evil.example", "http://localhost:80", "http://127.0.0.10:1"] {
-            assert_eq!(api_origin(Some(bad)), "https://api.github.com", "{bad}");
+        for source in ["http://127.0.0.1", "http://127.0.0.1/", "http://127.0.0.1:8123", "http://127.0.0.1:8123/"] {
+            assert_eq!(update_key(Some(source)), TEST_KEY);
+            assert_eq!(local(Some(source)).as_deref(), Some(source.trim_end_matches('/')));
         }
+        for source in [
+            None,
+            Some("https://evil.example"),
+            Some("http://127.0.0.1.evil.example"),
+            Some("http://localhost:80"),
+            Some("http://127.0.0.10:1"),
+            Some("http://127.0.0.1:80@evil.example"),
+            Some("http://127.0.0.1:99999"),
+            Some("http://127.0.0.1:0"),
+            Some("http://127.0.0.1:1/path"),
+            Some("http://127.0.0.1:1?x"),
+            Some("http://127.0.0.1:"),
+            Some("http://127.0.0.1/#x"),
+            Some("http://127.0.0.1//"),
+        ] {
+            assert_eq!(update_key(source), PRODUCTION_KEY, "{source:?}");
+            assert_eq!(api_origin(source), "https://api.github.com", "{source:?}");
+        }
+        for port in ["1", "65535"] {
+            assert!(local(Some(&format!("http://127.0.0.1:{port}"))).is_some());
+        }
+    }
+
+    const ZIP: &[u8] = include_bytes!("../tests/fixtures/update/forward.zip");
+    const SIGNATURE: &str = include_str!("../tests/fixtures/update/forward.zip.sig");
+
+    #[test]
+    fn signed_fixture_requires_unchanged_bytes_and_matching_version() {
+        verify(ZIP, SIGNATURE, TEST_KEY, "99.0.0").unwrap();
+        verify(ZIP, &format!(" \n{SIGNATURE}\n"), TEST_KEY, "v99.0.0+build").unwrap();
+        let mut tampered = ZIP.to_vec();
+        tampered[0] ^= 1;
+        assert!(verify(&tampered, SIGNATURE, TEST_KEY, "99.0.0").is_err());
+        assert!(verify(ZIP, SIGNATURE, TEST_KEY, "98.0.0").is_err());
+        assert!(verify(ZIP, SIGNATURE, TEST_KEY, "invalid").is_err());
+        assert!(verify(ZIP, include_str!("../tests/fixtures/update/forward.no-version.sig"), TEST_KEY, "99.0.0").is_err());
+        assert!(verify(ZIP, SIGNATURE, PRODUCTION_KEY, "99.0.0").is_err());
+    }
+
+    #[test]
+    fn malformed_signatures_and_changed_trusted_comment_are_refused() {
+        for signature in ["", "not base64!", "Z2FyYmFnZQ=="] {
+            assert!(verify(ZIP, signature, TEST_KEY, "99.0.0").is_err());
+        }
+        let text = String::from_utf8(STANDARD.decode(SIGNATURE.trim()).unwrap()).unwrap();
+        let tampered = STANDARD.encode(text.replace("version:99.0.0", "version:98.0.0"));
+        assert!(verify(ZIP, &tampered, TEST_KEY, "98.0.0").is_err());
+    }
+
+    #[test]
+    fn production_key_has_the_expected_identity() {
+        let text = String::from_utf8(STANDARD.decode(PRODUCTION_KEY).unwrap()).unwrap();
+        PublicKey::decode(&text).unwrap();
+        assert!(text.lines().next().unwrap().ends_with("354881309A046A0B"));
     }
 }

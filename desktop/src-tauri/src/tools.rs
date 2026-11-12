@@ -105,12 +105,16 @@ pub fn check_tool(runner: &Runner, kind: Kind, path: &Path) -> Res<String> {
 
 pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: &mut dyn FnMut(u64)) -> Res<()> {
     // Plain HTTP only reaches the local server of the packaged update check (see update::SOURCE_ENV).
-    let local = url.starts_with("http://127.0.0.1:");
+    let local = url.strip_prefix("http://").is_some_and(|rest| {
+        let authority = rest.split('/').next().unwrap_or_default();
+        crate::update::local(Some(&format!("http://{authority}"))).is_some()
+    });
     if !url.starts_with("https://") && !local {
         return fail("只接受 HTTPS 下載來源。");
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .https_only(!local)
+        .max_redirects(if local { 0 } else { 10 })
         .timeout_connect(Some(std::time::Duration::from_secs(30)))
         .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
         // Without it a silently dead connection blocks the read forever, and cancel is only checked between reads.
@@ -118,6 +122,9 @@ pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: 
         .build()
         .into();
     let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試。")))?;
+    if local && response.status().is_redirection() {
+        return fail("本機下載來源不允許重新導向。");
+    }
     let mut reader = response.into_body().into_reader();
     let mut file = std::fs::File::create(dest).map_err(|e| Error::Failed(format!("無法寫入下載暫存：{e}")))?;
     let mut buffer = vec![0u8; 256 * 1024];
@@ -297,6 +304,33 @@ pub fn process_running(exe: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_download_refuses_redirects_and_spoofed_authorities() {
+        let dest = std::env::temp_dir().join(format!("bili-redirect-{}", uuid::Uuid::new_v4().simple()));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: https://evil.example/file\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let error = https_fetch(&url, &dest, 10, &Cancel::default(), &mut |_| {}).unwrap_err();
+        server.join().unwrap();
+        assert!(error.to_string().contains("重新導向"), "{error}");
+        assert!(!dest.exists());
+        for url in [
+            "http://127.0.0.1:80@evil.example/file",
+            "http://127.0.0.1:0/file",
+            "http://127.0.0.1:99999/file",
+            "http://127.0.0.1.evil.example/file",
+            "http://127.0.0.1?x",
+        ] {
+            let error = https_fetch(url, &dest, 10, &Cancel::default(), &mut |_| {}).unwrap_err();
+            assert!(error.to_string().contains("HTTPS"), "{error}");
+        }
+    }
 
     #[test]
     fn process_running_matches_the_exact_executable_only() {
