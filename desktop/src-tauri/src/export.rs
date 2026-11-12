@@ -178,10 +178,11 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
     };
 
     let cover_result: Res<()> = (|| {
-        progress(None, "嵌入原始封面");
+        // A cache that never had a cover has nothing to embed: the MP4 already matches what the phone holds.
         if !req.item.has_cover {
-            return fail("手機快取中沒有封面圖片（cover.jpg）。");
+            return Ok(());
         }
+        progress(None, "嵌入原始封面");
         let cover = temp.join("cover.jpg");
         adb.pull(req.serial, &format!("{remote}/cover.jpg"), &s(&cover), cancel, &mut |_| {})?;
         let original: Value =
@@ -266,6 +267,10 @@ pub fn export(runner: &Runner, adb: &Adb, storage: &Storage, req: &Request, canc
         validate(&covered, progress)
     })();
     let (chosen, cover_error) = match cover_result {
+        Ok(()) if !req.item.has_cover => {
+            validate(&partial, progress)?;
+            (partial.clone(), None)
+        }
         Ok(()) => (covered.clone(), None),
         Err(Error::Cancelled) => return Err(Error::Cancelled),
         Err(e) => {
