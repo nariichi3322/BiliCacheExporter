@@ -264,7 +264,9 @@ check(chinaOnly && pulls.some(p => p.includes('tv.danmaku.bili/download/500/c_5/
 check(calls(dir).filter(c => c[2] === 'shell').every(c => /^(pm list|find |stat -c|cat )/.test(c[3])), 'Phone only received read-only commands')
 const resultText = await app.text()
 const noCover = files.find(f => f.startsWith('沒有封面'))
-check(!resultText.includes('部分完成') && !resultText.includes('手機快取中沒有封面圖片') && !!noCover && !probe(path.join(dir, 'out', noCover)).some(s => s.disposition.attached_pic === 1), 'A video cached without a cover is exported as complete, with no cover stream', noCover)
+// Look at that row only: the notice always lists every outcome, "0 部分完成" included.
+const noCoverRow = await app.eval("(() => { const row = [...document.querySelectorAll('li.row')].find(r => r.innerText.includes('沒有封面的影片')); return row ? { good: !!row.querySelector('.meta.good'), text: row.innerText } : null })()")
+check(!!noCoverRow && noCoverRow.good && !noCoverRow.text.includes('部分完成') && !resultText.includes('手機快取中沒有封面圖片') && !!noCover && !probe(path.join(dir, 'out', noCover)).some(s => s.disposition.attached_pic === 1), 'A video cached without a cover is exported as complete, with no cover stream', noCoverRow?.text.replace(/\s+/g, ' '))
 // Status colors must beat the muted .meta default in the real cascade (unit tests only see class names).
 const metaColorDiffers = sel => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); const m = document.querySelector('li.row .meta:not(.good):not(.warning):not(.accent)'); return !!e && !!m && getComputedStyle(e).color !== getComputedStyle(m).color })()`
 const extracted = path.join(work, 'extracted.jpg')
