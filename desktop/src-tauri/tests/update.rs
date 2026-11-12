@@ -6,6 +6,7 @@ use bili_core::app::Event;
 use bili_core::tools::Fetch;
 use bili_core::{Cancel, Error};
 use common::*;
+use std::os::windows::fs::OpenOptionsExt;
 use std::path::Path;
 
 fn github(tag: &'static str, body: &'static str) -> Box<Fetch> {
@@ -148,11 +149,15 @@ fn update_replaces_only_the_executable() {
     let settings = std::fs::read(dir.join("settings.json")).unwrap();
     h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
     assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
-    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe.old")).unwrap(), b"old exe");
+    let staging_name = entries(&dir).into_iter().find(|n| n.starts_with(".update-")).unwrap();
+    let staging = dir.join(&staging_name);
+    assert_eq!(std::fs::read(staging.join("old.exe")).unwrap(), b"old exe");
+    assert_eq!(std::fs::read_to_string(staging.join(".bili-owned")).unwrap(), staging_name.strip_prefix(".update-").unwrap());
+    assert!(!dir.join("BiliCacheExporter.exe.old").exists());
     assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), settings);
     assert_eq!(std::fs::read(dir.join("README.md")).unwrap(), b"old readme");
     assert_eq!(std::fs::read(dir.join("tools").join("adb").join("adb.exe")).unwrap(), b"adb");
-    assert_eq!(entries(&dir), ["BiliCacheExporter.exe", "BiliCacheExporter.exe.old", "README.md", "settings.json", "tools"], "no staging left");
+    assert_eq!(entries(&dir), [&staging_name, "BiliCacheExporter.exe", "README.md", "settings.json", "tools"]);
     let stages: Vec<String> = h
         .events
         .lock()
@@ -169,8 +174,8 @@ fn update_replaces_only_the_executable() {
     std::fs::create_dir_all(dir.join(".update-crashed")).unwrap();
     std::fs::write(dir.join(".update-crashed").join("BiliCacheExporter-win-x64.zip"), b"partial").unwrap();
     harness_in(dir.clone(), Phone::one_device(), no_network());
-    assert!(!dir.join("BiliCacheExporter.exe.old").exists(), "the next start removes the old executable");
-    assert!(!dir.join(".update-crashed").exists(), "and staging left by a crash");
+    assert!(!staging.exists(), "the next start removes the owned staging folder including the old executable");
+    assert_eq!(std::fs::read(dir.join(".update-crashed").join("BiliCacheExporter-win-x64.zip")).unwrap(), b"partial", "unowned staging is preserved");
 }
 
 #[test]
@@ -187,10 +192,12 @@ fn hash_mismatch_changes_nothing() {
 #[test]
 fn a_different_latest_version_is_not_installed() {
     let dir = installed();
+    let before = snapshot(&dir);
     let h = harness_in(dir.clone(), Phone::one_device(), release(package(b"new exe"), package(b"new exe")));
     let e = h.app.install_update(&dir.join("BiliCacheExporter.exe"), "98.0.0").unwrap_err();
     assert!(e.message.contains("99.0.0"), "{}", e.message);
     assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"old exe");
+    assert_eq!(snapshot(&dir), before);
 }
 
 #[test]
@@ -223,4 +230,170 @@ fn packages_zipped_with_backslash_separators_also_install() {
     let h = harness_in(dir.clone(), Phone::one_device(), release(zipped.clone(), zipped));
     h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
     assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
+}
+
+fn snapshot(dir: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    for name in entries(dir) {
+        let path = dir.join(name);
+        if path.is_dir() {
+            files.push((path.clone(), Vec::new()));
+            files.extend(snapshot(&path));
+        } else {
+            files.push((path.clone(), std::fs::read(path).unwrap()));
+        }
+    }
+    files
+}
+
+fn owned(dir: &Path) -> std::path::PathBuf {
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    let path = dir.join(format!(".update-{id}"));
+    std::fs::create_dir(&path).unwrap();
+    std::fs::write(path.join(".bili-owned"), id).unwrap();
+    std::fs::write(path.join("old.exe"), b"original").unwrap();
+    path
+}
+
+fn junction(link: &Path, target: &Path) {
+    let result = std::process::Command::new("cmd").args(["/c", "mklink", "/J"]).arg(link).arg(target).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stdout));
+}
+
+#[test]
+fn startup_preserves_unowned_or_unsafe_items() {
+    let dir = installed();
+    std::fs::write(dir.join("BiliCacheExporter.exe.old"), b"manual backup").unwrap();
+    std::fs::write(dir.join("another.exe.old"), b"another backup").unwrap();
+    let missing = owned(&dir);
+    std::fs::remove_file(missing.join(".bili-owned")).unwrap();
+    let mismatching = owned(&dir);
+    std::fs::write(mismatching.join(".bili-owned"), b"wrong").unwrap();
+    let empty = owned(&dir);
+    std::fs::write(empty.join(".bili-owned"), b"").unwrap();
+    let oversized = owned(&dir);
+    let id = oversized.file_name().unwrap().to_str().unwrap().strip_prefix(".update-").unwrap();
+    std::fs::write(oversized.join(".bili-owned"), format!("{id}extra")).unwrap();
+    for name in
+        [".update-crashed", ".update-ABCDEF0123456789abcdef0123456789", ".update-0123456789abcdef0123456789abcdef0", ".UPDATE-0123456789abcdef0123456789abcdef"]
+    {
+        let path = dir.join(name);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("keep"), b"untouched").unwrap();
+        std::fs::write(path.join(".bili-owned"), name.trim_start_matches(".update-")).unwrap();
+    }
+    let nested = owned(&dir);
+    std::fs::create_dir(nested.join("child")).unwrap();
+    std::fs::write(nested.join("child/keep"), b"nested").unwrap();
+    let marker_directory = owned(&dir);
+    std::fs::remove_file(marker_directory.join(".bili-owned")).unwrap();
+    std::fs::create_dir(marker_directory.join(".bili-owned")).unwrap();
+    let target = tempdir();
+    let target_owned = owned(&target);
+    let link = dir.join(target_owned.file_name().unwrap());
+    junction(&link, &target_owned);
+    let nested_link = owned(&dir);
+    junction(&nested_link.join("link"), &target_owned);
+    let before = snapshot(&dir);
+    let target_before = snapshot(&target);
+    let h = harness_in(dir.clone(), Phone::one_device(), no_network());
+    assert_eq!(snapshot(&dir), before);
+    assert_eq!(snapshot(&target), target_before);
+    drop(h);
+    std::fs::remove_dir(link).unwrap();
+    std::fs::remove_dir(nested_link.join("link")).unwrap();
+}
+
+#[test]
+fn update_preserves_a_manual_executable_backup() {
+    let dir = installed();
+    let backup = dir.join("BiliCacheExporter.exe.old");
+    std::fs::write(&backup, b"manual backup").unwrap();
+    let h = harness_in(dir.clone(), Phone::one_device(), release(package(b"new exe"), package(b"new exe")));
+    h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap();
+    assert_eq!(std::fs::read(backup).unwrap(), b"manual backup");
+    assert_eq!(std::fs::read(dir.join("BiliCacheExporter.exe")).unwrap(), b"new exe");
+}
+
+#[test]
+fn failed_download_and_cancellation_change_nothing() {
+    for cancelled in [false, true] {
+        let dir = installed();
+        let before = snapshot(&dir);
+        let fetch = release(package(b"new exe"), package(b"new exe"));
+        let failing: Box<Fetch> = Box::new(move |url, dest, max, cancel, progress| {
+            if url.ends_with("/releases/latest") {
+                return fetch(url, dest, max, cancel, progress);
+            }
+            std::fs::write(dest, b"partial download").unwrap();
+            if cancelled {
+                cancel.cancel();
+                cancel.check()
+            } else {
+                Err(Error::Failed("offline".into()))
+            }
+        });
+        let h = harness_in(dir.clone(), Phone::one_device(), failing);
+        let e = h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").unwrap_err();
+        assert!(if cancelled { e.cancelled } else { e.message.contains("offline") });
+        assert_eq!(snapshot(&dir), before);
+    }
+}
+
+#[test]
+fn invalid_packages_change_nothing() {
+    let incomplete = zip_bytes(&[("BiliCacheExporter-win-x64/README.md", b"missing executable")]);
+    for (downloaded, hashed) in [(package(b"tampered"), package(b"expected")), (b"not a zip".to_vec(), b"not a zip".to_vec()), (incomplete.clone(), incomplete)]
+    {
+        let dir = installed();
+        let before = snapshot(&dir);
+        let h = harness_in(dir.clone(), Phone::one_device(), release(downloaded, hashed));
+        assert!(h.app.install_update(&dir.join("BiliCacheExporter.exe"), "99.0.0").is_err());
+        assert_eq!(snapshot(&dir), before);
+    }
+}
+
+fn wait_removed(path: &Path) {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while path.exists() && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(!path.exists(), "cleanup did not finish: {}", path.display());
+}
+
+#[test]
+fn startup_retries_an_exclusively_locked_marker() {
+    let dir = installed();
+    let staging = owned(&dir);
+    let lock = std::fs::OpenOptions::new().read(true).share_mode(0).open(staging.join(".bili-owned")).unwrap();
+    let h = harness_in(dir.clone(), Phone::one_device(), no_network());
+    assert_eq!(std::fs::read(staging.join("old.exe")).unwrap(), b"original");
+    assert!(staging.join(".bili-owned").exists());
+    assert!(std::fs::read(staging.join(".bili-owned")).is_err());
+    drop(lock);
+    wait_removed(&staging);
+    drop(h);
+}
+
+#[test]
+fn startup_retries_a_file_without_delete_sharing() {
+    let dir = installed();
+    let staging = owned(&dir);
+    let lock = std::fs::OpenOptions::new().read(true).share_mode(1).open(staging.join("old.exe")).unwrap();
+    let h = harness_in(dir.clone(), Phone::one_device(), no_network());
+    assert_eq!(std::fs::read(staging.join("old.exe")).unwrap(), b"original");
+    assert!(staging.join(".bili-owned").is_file());
+    drop(lock);
+    wait_removed(&staging);
+    drop(h);
+}
+
+#[test]
+fn startup_removes_only_empty_markerless_staging_with_an_exact_name() {
+    let dir = installed();
+    let path = dir.join(format!(".update-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir(&path).unwrap();
+    let h = harness_in(dir, Phone::one_device(), no_network());
+    assert!(!path.exists());
+    drop(h);
 }
