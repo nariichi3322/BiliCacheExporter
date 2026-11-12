@@ -263,10 +263,12 @@ const chinaOnly = files.find(f => f.startsWith('只在中國版'))
 check(chinaOnly && pulls.some(p => p.includes('tv.danmaku.bili/download/500/c_5/80/video.m4s')) && probe(path.join(dir, 'out', chinaOnly)).some(s => s.disposition.attached_pic === 1), 'China-only video exported from the China app cache with its cover', chinaOnly)
 check(calls(dir).filter(c => c[2] === 'shell').every(c => /^(pm list|find |stat -c|cat )/.test(c[3])), 'Phone only received read-only commands')
 const resultText = await app.text()
-check(resultText.includes('部分完成') && resultText.includes('手機快取中沒有封面圖片'), 'Missing cover reported as partial with reason')
+const noCover = files.find(f => f.startsWith('沒有封面'))
+// Look at that row only: the notice always lists every outcome, "0 部分完成" included.
+const noCoverRow = await app.eval("(() => { const row = [...document.querySelectorAll('li.row')].find(r => r.innerText.includes('沒有封面的影片')); return row ? { good: !!row.querySelector('.meta.good'), text: row.innerText } : null })()")
+check(!!noCoverRow && noCoverRow.good && !noCoverRow.text.includes('部分完成') && !resultText.includes('手機快取中沒有封面圖片') && !!noCover && !probe(path.join(dir, 'out', noCover)).some(s => s.disposition.attached_pic === 1), 'A video cached without a cover is exported as complete, with no cover stream', noCoverRow?.text.replace(/\s+/g, ' '))
 // Status colors must beat the muted .meta default in the real cascade (unit tests only see class names).
 const metaColorDiffers = sel => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); const m = document.querySelector('li.row .meta:not(.good):not(.warning):not(.accent)'); return !!e && !!m && getComputedStyle(e).color !== getComputedStyle(m).color })()`
-check(await app.eval(metaColorDiffers('li.row .meta.warning')), 'Partial result line keeps its warning color')
 const extracted = path.join(work, 'extracted.jpg')
 run(ffmpeg, ['-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', path.join(dir, 'out', long), '-map', '0:v:1', '-c', 'copy', '-f', 'image2', extracted])
 check(Buffer.compare(fs.readFileSync(extracted), fs.readFileSync(path.join(work, 'media', 'cover.jpg'))) === 0, 'Embedded cover equals the original bytes')
@@ -286,6 +288,8 @@ await app.click('匯出所選')
 await app.waitFor("document.querySelector('.progress-box')?.innerText.includes('傳輸')", 10000)
 await app.click('取消')
 check(await app.waitFor("document.body.innerText.includes('已取消')", 20000), 'Cancel stops the running export')
+// The first export no longer leaves a non-success row (a missing cover is complete), so the warning colour is checked here.
+check(await app.eval(metaColorDiffers('li.row .meta.warning')), 'Cancelled result line keeps its warning color')
 check(outputs(dir).length === 4 && fs.readdirSync(path.join(dir, 'out', '.bili-temp')).length === 0, 'Cancel keeps earlier outputs and cleans its temp')
 await app.shot('06-cancelled-dark')
 fs.writeFileSync(path.join(dir, 'tools/adb/fake-phone/pull-delay-ms'), '0')

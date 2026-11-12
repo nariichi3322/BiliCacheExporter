@@ -427,7 +427,7 @@ fn multi_quality_requires_explicit_valid_choice() {
     assert!(h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(9), danmaku: false }]).is_err());
     assert!(h.phone.lock().unwrap().pulls.is_empty(), "rejected before any transfer");
     let summary = h.app.export(r.generation, vec![Selection { id: multi.id, variant: Some(q116), danmaku: false }]).unwrap();
-    assert_eq!(summary.partial, 1);
+    assert_eq!(summary.successful, 1, "this item was cached without a cover, which is a complete export");
     assert_eq!(h.phone.lock().unwrap().pulls, vec![format!("{remote}/116/video.m4s"), format!("{remote}/116/audio.m4s")], "only the chosen quality is pulled");
 }
 
@@ -613,24 +613,39 @@ fn danmaku_become_a_sidecar_ass_and_never_fail_the_export() {
 }
 
 #[test]
-fn cover_problems_keep_valid_video_as_partial() {
+fn a_cache_without_a_cover_is_complete_and_a_broken_cover_is_partial() {
     let mut phone = Phone::one_device();
     let none = phone.add("1/c_1", "沒有封面", &["80"], false);
     let broken = phone.add("2/c_2", "壞封面", &["80"], true);
     phone.files.insert(format!("{broken}/cover.jpg"), b"not an image at all".to_vec());
     let h = harness(phone);
+    let mut settings = input(&h);
+    settings.full_decode = true;
+    h.app.save_settings(settings).unwrap();
     let r = h.app.connect(None).unwrap();
+    let id_of = |remote: &str| r.items.iter().find(|i| i.remote == remote).unwrap().id;
     let ids: Vec<Selection> = r.items.iter().map(|i| sel(i.id)).collect();
     let summary = h.app.export(r.generation, ids).unwrap();
-    assert_eq!(summary.partial, 2, "{:?}", results(&h));
+    assert_eq!((summary.successful, summary.partial), (1, 1), "{:?}", results(&h));
     for name in exported(&h) {
         let streams = probe(&h.dir.join("output").join(&name))["streams"].as_array().unwrap().clone();
         assert!(streams.iter().any(|s| s["codec_name"] == "h264") && streams.iter().all(|s| s["disposition"]["attached_pic"] == 0));
     }
     let messages = results(&h);
-    assert!(messages.iter().any(|(_, o, m)| *o == Outcome::Partial && m.contains("沒有封面圖片")));
-    assert!(messages.iter().any(|(_, o, m)| *o == Outcome::Partial && m.contains("JPEG／PNG")));
-    let _ = none;
+    assert!(messages.iter().any(|(id, o, _)| *id == id_of(&none) && *o == Outcome::Success), "{messages:?}");
+    assert!(messages.iter().any(|(id, o, m)| *id == id_of(&broken) && *o == Outcome::Partial && m.contains("JPEG／PNG")), "{messages:?}");
+    let stages: Vec<String> = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            Event::Progress { progress } if progress.id == id_of(&none) => Some(progress.stage.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(stages.iter().any(|s| s == "驗證影音完整性"), "the cover-less MP4 is still fully decoded: {stages:?}");
+    assert!(!stages.iter().any(|s| s.contains("封面")), "no cover stage for a cache without one: {stages:?}");
 }
 
 fn direct_export(

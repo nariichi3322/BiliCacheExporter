@@ -20,7 +20,7 @@ The app's interface is in Traditional Chinese; the button names below give the C
 ## Results
 
 - **Done**: the audio/video streams passed their checks (including a full decode when full verification is on) and the original cover was embedded.
-- **Partly done**: the audio/video is valid but the cover is missing or could not be embedded; the valid MP4 is kept and you can retry.
+- **Partly done**: the audio/video is valid and the cache has a cover, but it could not be embedded; the valid MP4 is kept and you can retry. A video cached without a cover gets none and counts as done.
 - **Failed**: the row and the detailed log (「詳細記錄」) give the reason; one failure does not stop the rest.
 - **Cancelled**: stops the current and remaining items, keeps finished videos and cleans this run's temporary files. Retry unfinished items (「重試未完成項目」) transfers again and never overwrites existing MP4 files. After unplugging the phone you must reconnect; reconnecting does not resume an export by itself.
 
