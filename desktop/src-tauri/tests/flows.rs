@@ -365,6 +365,24 @@ fn cancel_during_scan_leaves_no_list() {
 }
 
 #[test]
+fn cancel_during_inventory_leaves_no_list() {
+    let mut phone = Phone::one_device();
+    phone.add("1/c_1", "A", &["80"], true);
+    phone.cancel_inventory = true;
+    let h = harness(phone);
+    let e = h.app.connect(None).unwrap_err();
+    assert!(e.cancelled, "{}", e.message);
+    let snap = h.app.snapshot();
+    assert!(snap.items.is_empty() && snap.serial.is_none());
+    let phone = h.phone.lock().unwrap();
+    assert_eq!(
+        phone.calls.iter().filter(|c| c.get(3).is_some_and(|s| s.contains("-exec stat"))).count(),
+        1,
+        "cancelling does not fall back to per-item listings"
+    );
+}
+
+#[test]
 fn overlapping_operations_are_refused() {
     let mut phone = Phone::one_device();
     phone.add("1/c_1", "A", &["80"], false);
@@ -438,17 +456,35 @@ fn incomplete_missing_empty_and_unknown_items_stay_visible_with_reasons() {
 }
 
 #[test]
-fn scan_reads_all_file_sizes_of_an_item_in_one_call() {
-    let mut phone = Phone::one_device();
+fn scan_reads_all_file_sizes_of_a_cache_root_in_one_call() {
+    let mut phone = Phone { china: true, ..Phone::one_device() };
     phone.add("1/c_1", "一", &["80", "64"], true);
+    phone.add("2/c_2", "二", &["80"], true);
+    phone.add_in(CHINA_ROOT, "3/c_3", "三", &["16"], true);
     let h = harness(phone);
     let r = h.app.connect(None).unwrap();
+    assert_eq!(r.items.len(), 3);
     assert_eq!(r.items[0].variants.len(), 2);
-    assert!(r.items[0].inventory.iter().all(|f| f.size.is_some()));
+    assert_eq!(r.items[0].inventory.len(), 8, "only its own files: {:?}", r.items[0].inventory);
+    assert!(r.items.iter().all(|i| i.issue.is_empty() && i.inventory.iter().all(|f| f.size.is_some())));
     let phone = h.phone.lock().unwrap();
     let shells: Vec<&str> = phone.calls.iter().filter(|c| c[0] == "-s" && c[2] == "shell").map(|c| c[3].as_str()).collect();
     assert!(!shells.iter().any(|c| c.starts_with("stat ")), "no per-file stat: {shells:?}");
-    assert_eq!(shells.iter().filter(|c| c.contains("-exec stat")).count(), 1);
+    assert_eq!(shells.iter().filter(|c| c.contains("-exec stat")).count(), 2, "one inventory per cache root, not per item: {shells:?}");
+}
+
+#[test]
+fn unparseable_inventory_falls_back_and_only_fails_the_odd_item() {
+    let mut phone = Phone::one_device();
+    let odd = phone.add("1/c_1", "怪", &["80"], false);
+    // A line break in a file name splits its line of the listing in two.
+    phone.files.insert(format!("{odd}/a\nb"), b"x".to_vec());
+    phone.add("2/c_2", "好", &["80"], false);
+    let h = harness(phone);
+    let items = h.app.connect(None).unwrap().items;
+    assert!(items[0].issue.contains("掃描失敗"), "{}", items[0].issue);
+    assert!(items[1].issue.is_empty() && items[1].auto_variant == Some(0), "{:?}", items[1]);
+    assert!(items[1].inventory.iter().all(|f| f.size.is_some()));
 }
 
 #[test]
@@ -457,12 +493,16 @@ fn a_file_that_cannot_be_sized_only_marks_its_own_line() {
     let remote = phone.add("1/c_1", "一", &["80"], false);
     phone.files.insert(format!("{remote}/danmaku.xml"), b"x".to_vec());
     phone.fail_stat = Some("danmaku.xml".into());
+    phone.add("2/c_2", "二", &["80"], false);
     let h = harness(phone);
-    let item = h.app.connect(None).unwrap().items.remove(0);
+    let mut items = h.app.connect(None).unwrap().items;
+    let item = items.remove(0);
     assert_eq!(item.auto_variant, Some(0), "media still exportable: {:?}", item.variants);
     let bad = item.inventory.iter().find(|f| f.path == "danmaku.xml").unwrap();
     assert!(bad.size.is_none() && !bad.error.is_empty());
     assert!(item.inventory.iter().filter(|f| f.path != "danmaku.xml").all(|f| f.size.is_some()));
+    // The whole-root inventory failed on that file; the other item is listed on its own and is untouched.
+    assert!(items[0].issue.is_empty() && items[0].auto_variant == Some(0) && items[0].inventory.iter().all(|f| f.size.is_some()), "{:?}", items[0]);
 }
 
 // ---------- 04/05: single export, cover, safety ----------

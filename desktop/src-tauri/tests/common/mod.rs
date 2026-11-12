@@ -146,6 +146,8 @@ pub struct Phone {
     pub devices_timeout: bool,
     pub fail_pull: Option<String>,
     pub cancel_pull: Option<String>,
+    /// The user cancels while the phone is answering a size inventory.
+    pub cancel_inventory: bool,
     pub disconnect_after_pull: Option<String>,
     pub fail_stat: Option<String>,
     pub fail_tool: bool,
@@ -205,7 +207,8 @@ impl Phone {
                 return Ok(lines.join("\n"));
             }
             let stat = rest.strip_suffix(" -type f -exec stat -c '%s %n' {} +");
-            let dir = unquote(stat.or_else(|| rest.strip_suffix(" -type f")).expect("find form"));
+            // A cache root is passed with its trailing slash, an item folder without one.
+            let dir = unquote(stat.or_else(|| rest.strip_suffix(" -type f")).expect("find form")).trim_end_matches('/').to_string();
             let found = self.files.iter().filter(|(k, _)| k.starts_with(&format!("{dir}/")));
             if stat.is_none() {
                 return Ok(found.map(|(k, _)| k.clone()).collect::<Vec<_>>().join("\n"));
@@ -254,6 +257,10 @@ impl Phone {
         match args[2].as_str() {
             "shell" => {
                 assert_eq!(args.len(), 4);
+                if self.cancel_inventory && args[3].contains("-exec stat") {
+                    cancel.cancel();
+                    return Err(Error::Cancelled);
+                }
                 self.shell(&args[3])
             }
             "pull" => {

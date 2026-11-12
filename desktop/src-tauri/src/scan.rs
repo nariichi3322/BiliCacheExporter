@@ -153,6 +153,32 @@ impl Adb<'_> {
         Ok(files)
     }
 
+    /// Every file under an app's cache `root` with its size, in one adb call for the whole root.
+    /// `None` when that call fails or its output cannot be parsed: nothing of it is used, and each item
+    /// falls back to [`Adb::list_sizes`], so one bad file still only marks its own row.
+    fn root_sizes(&self, serial: &str, root: &str, cancel: &Cancel) -> Res<Option<Vec<Listed>>> {
+        let out = match self.shell(serial, &format!("find {} -type f -exec stat -c '%s %n' {{}} +", quote(root)), cancel) {
+            Ok(out) => out,
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => {
+                self.runner.log(&format!("整個快取目錄的盤點失敗，改為逐項盤點：{e}"));
+                return Ok(None);
+            }
+        };
+        let mut files: Vec<Listed> = Vec::new();
+        for line in out.lines().map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty()) {
+            let Some((size, path)) = line.split_once(' ').and_then(|(size, path)| Some((size.parse().ok()?, path))) else {
+                self.runner.log("整個快取目錄的盤點無法解析，改為逐項盤點。");
+                return Ok(None);
+            };
+            files.push((path.into(), size, files.len()));
+        }
+        // Sorted by path so an item's files are one contiguous run; the listing position restores the phone's order.
+        files.sort_by(|a, b| (&a.0, a.2).cmp(&(&b.0, b.2)));
+        files.dedup_by(|later, first| later.0 == first.0);
+        Ok(Some(files))
+    }
+
     /// Read-only scan of every installed supported app's cache. Problems stay on their own row.
     pub fn scan(&self, serial: &str, cancel: &Cancel, found: &mut dyn FnMut(&CacheItem)) -> Res<Vec<CacheItem>> {
         let mut installed = Vec::new();
@@ -169,12 +195,13 @@ impl Adb<'_> {
         let mut seen = std::collections::HashSet::new();
         for &(package, root, label) in &installed {
             let paths = self.shell(serial, &format!("find {} -type f -name entry.json", quote(root)), cancel)?;
+            let sizes = if paths.trim().is_empty() { None } else { self.root_sizes(serial, root, cancel)? };
             for entry in paths.lines().map(|p| p.trim_end_matches('\r')).filter(|p| !p.is_empty()) {
                 if !seen.insert(entry.to_string()) {
                     continue;
                 }
                 cancel.check()?;
-                let mut item = self.scan_entry(serial, entry, root, cancel)?;
+                let mut item = self.scan_entry(serial, entry, root, sizes.as_deref(), cancel)?;
                 item.source = format!("{label}（{package}）");
                 // The same part cached by both apps has the same `<id>/c_<cid>` path, so it becomes one row.
                 let same = relative(&item.remote).and_then(|key| items.iter().position(|i| relative(&i.remote) == Some(key)));
@@ -191,7 +218,7 @@ impl Adb<'_> {
         Ok(items)
     }
 
-    fn scan_entry(&self, serial: &str, entry: &str, root: &str, cancel: &Cancel) -> Res<CacheItem> {
+    fn scan_entry(&self, serial: &str, entry: &str, root: &str, sizes: Option<&[Listed]>, cancel: &Cancel) -> Res<CacheItem> {
         Ok(if !is_child_path(entry, root) || !entry.ends_with("/entry.json") {
             // Untrusted paths are never kept as a source; the row only reports the problem.
             self.runner.log(&format!("略過不合法的快取路徑：{}", serde_json::to_string(entry).unwrap()));
@@ -199,7 +226,7 @@ impl Adb<'_> {
         } else {
             let remote = &entry[..entry.rfind('/').unwrap()];
             let mut item = CacheItem { remote: remote.into(), title: remote[remote.rfind('/').unwrap() + 1..].into(), ..Default::default() };
-            match self.scan_item(serial, entry, &mut item, cancel) {
+            match self.scan_item(serial, entry, &mut item, sizes, cancel) {
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
                 Err(e) => {
                     item.issue = format!("掃描失敗：{e}");
@@ -211,7 +238,7 @@ impl Adb<'_> {
         })
     }
 
-    fn scan_item(&self, serial: &str, entry: &str, item: &mut CacheItem, cancel: &Cancel) -> Res<()> {
+    fn scan_item(&self, serial: &str, entry: &str, item: &mut CacheItem, sizes: Option<&[Listed]>, cancel: &Cancel) -> Res<()> {
         let remote = item.remote.clone();
         let json = self.shell(serial, &format!("cat {}", quote(entry)), cancel)?;
         match serde_json::from_str::<Value>(&json) {
@@ -226,7 +253,10 @@ impl Adb<'_> {
                 self.runner.log(&item.issue);
             }
         }
-        let sized = self.list_sizes(serial, &remote, cancel)?;
+        let sized = match sizes {
+            Some(all) => under(all, &remote),
+            None => self.list_sizes(serial, &remote, cancel)?,
+        };
         if sized.iter().any(|(p, _)| !is_child_path(p, &remote)) {
             return fail("手機回傳不合法的項目檔案路徑。");
         }
@@ -340,6 +370,18 @@ impl Adb<'_> {
         }
         Ok(Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
     }
+}
+
+/// One file of a whole-root listing: (path, size, position in the phone's listing).
+type Listed = (String, u64, usize);
+
+/// The files below `dir` in a path-sorted whole-root listing, in the order the phone listed them.
+fn under(all: &[Listed], dir: &str) -> Vec<(String, Result<u64, String>)> {
+    let prefix = format!("{dir}/");
+    let start = all.partition_point(|file| file.0.as_str() < prefix.as_str());
+    let mut own: Vec<&Listed> = all[start..].iter().take_while(|file| file.0.starts_with(&prefix)).collect();
+    own.sort_by_key(|file| file.2);
+    own.into_iter().map(|file| (file.0.clone(), Ok(file.1))).collect()
 }
 
 /// Path below the supported app's cache root, e.g. `<id>/c_<cid>`; `None` outside every root.
@@ -503,6 +545,17 @@ mod tests {
         assert!(!is_child_path(&format!("{CHINA_ROOT}1/c_1/entry.json"), ROOT));
         assert_eq!(quote("a'b"), "'a'\"'\"'b'");
         assert_eq!(parse_devices("List of devices attached\nA device model:X\nB unauthorized\n* daemon\n").len(), 2);
+    }
+
+    #[test]
+    fn an_items_files_come_out_of_the_root_listing_in_the_phones_order() {
+        let file = |path: &str, order| (format!("{ROOT}{path}"), 1, order);
+        let mut all = vec![file("1/c_1/b", 0), file("1/c_10/x", 1), file("1/c_1/a", 2), file("2/c_2/y", 3)];
+        all.sort_by(|a, b| (&a.0, a.2).cmp(&(&b.0, b.2)));
+        let names = |dir: &str| under(&all, &format!("{ROOT}{dir}")).into_iter().map(|(path, _)| path[ROOT.len()..].to_string()).collect::<Vec<_>>();
+        assert_eq!(names("1/c_1"), ["1/c_1/b", "1/c_1/a"], "the folder c_10 shares a name prefix and stays out");
+        assert_eq!(names("1/c_10"), ["1/c_10/x"]);
+        assert!(names("3/c_3").is_empty());
     }
 
     #[test]
