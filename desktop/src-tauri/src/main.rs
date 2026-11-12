@@ -128,10 +128,9 @@ fn open_url(kind: String) -> Out<()> {
 /// Opens only folders the app owns or the user configured; the UI cannot pass arbitrary paths.
 #[tauri::command]
 fn open_folder(s: State<Shared>, kind: String) -> Out<()> {
-    let snap = s.app.snapshot();
     let path = match kind.as_str() {
         "log" => s.app.dir.join("log"),
-        "output" => PathBuf::from(snap.settings.output.trim()),
+        "output" => PathBuf::from(s.app.output_dir().trim()),
         _ => return Err(err("不支援的資料夾")),
     };
     if !path.is_absolute() || !path.is_dir() {
