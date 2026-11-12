@@ -155,10 +155,13 @@ pub fn resolve(dir: &Path, value: &str) -> PathBuf {
 /// Stores paths inside the program folder relative to it, so moving the folder keeps tools found.
 pub fn portable(dir: &Path, value: &str) -> String {
     let path = Path::new(value.trim());
-    let base = dir.to_string_lossy().to_lowercase();
-    let full = path.to_string_lossy();
-    if path.is_absolute() && full.to_lowercase().starts_with(&(base.trim_end_matches('\\').to_string() + "\\")) {
-        return full[base.trim_end_matches('\\').len() + 1..].to_string();
+    // Compared component by component: lower-casing can change a character's byte length (`İ`),
+    // so a lower-cased prefix length must never be used to cut the original string.
+    let same =
+        |a: std::path::Component, b: std::path::Component| a.as_os_str().to_string_lossy().to_lowercase() == b.as_os_str().to_string_lossy().to_lowercase();
+    let mut rest = path.components();
+    if path.is_absolute() && dir.components().all(|base| rest.next().is_some_and(|part| same(base, part))) && !rest.as_path().as_os_str().is_empty() {
+        return rest.as_path().to_string_lossy().into_owned();
     }
     value.trim().to_string()
 }
@@ -173,6 +176,21 @@ mod tests {
         assert_eq!(portable(dir, r"d:\apps\bili\tools\adb\adb.exe"), r"tools\adb\adb.exe");
         assert_eq!(portable(dir, r"D:\Apps\BiliOther\adb.exe"), r"D:\Apps\BiliOther\adb.exe");
         assert_eq!(resolve(dir, r"tools\adb\adb.exe"), Path::new(r"D:\Apps\Bili\tools\adb\adb.exe"));
+        assert_eq!(portable(Path::new(r"D:\Apps\Bili\"), r"D:\Apps\Bili\tools\adb\adb.exe"), r"tools\adb\adb.exe", "trailing separator on the folder");
+        assert_eq!(portable(dir, r"  D:\Tools\adb.exe "), r"D:\Tools\adb.exe", "outside the folder: only trimmed");
+        assert_eq!(portable(dir, r" tools\adb\adb.exe "), r"tools\adb\adb.exe", "relative: only trimmed");
+        assert_eq!(portable(dir, r"D:\Apps\Bili"), r"D:\Apps\Bili", "the folder itself is not a tool inside it");
+    }
+
+    #[test]
+    fn portable_survives_characters_whose_lower_case_is_longer() {
+        // `İ` is 2 bytes and lower-cases to 3, which used to shift the cut: one case lost a character, the other panicked.
+        let dir = Path::new(r"C:\Users\İbo\app");
+        for inside in [r"tools\adb\adb.exe", r"工具\adb.exe"] {
+            let full = format!(r"C:\Users\İbo\app\{inside}");
+            assert_eq!(portable(dir, &full), inside);
+            assert_eq!(resolve(dir, &portable(dir, &full)), Path::new(&full));
+        }
     }
 
     #[test]
