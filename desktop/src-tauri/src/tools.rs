@@ -113,6 +113,8 @@ pub fn https_fetch(url: &str, dest: &Path, max: u64, cancel: &Cancel, progress: 
         .https_only(!local)
         .timeout_connect(Some(std::time::Duration::from_secs(30)))
         .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
+        // Without it a silently dead connection blocks the read forever, and cancel is only checked between reads.
+        .timeout_per_read(Some(std::time::Duration::from_secs(60)))
         .build()
         .into();
     let response = agent.get(url).call().map_err(|e| Error::Failed(format!("下載失敗：{e}。請檢查網路後重試。")))?;
