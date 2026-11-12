@@ -53,8 +53,8 @@ impl Runner {
         let (tx, rx) = mpsc::channel::<(bool, String)>();
         spawn_reader(child.stdout.take().unwrap(), true, tx.clone());
         spawn_reader(child.stderr.take().unwrap(), false, tx);
-        // Metadata reads (`cat`) stay out of the log; redaction would drop them anyway.
-        let quiet_stdout = args.iter().any(|a| a.starts_with("cat "));
+        // Metadata reads (`cat`, ffprobe's `-of json`) stay out of the log: redaction only recognises single-line JSON.
+        let quiet_stdout = args.iter().any(|a| a.starts_with("cat ")) || args.windows(2).any(|w| w[0] == "-of" && w[1] == "json");
         let deadline = Instant::now() + Duration::from_secs(timeout_secs);
         let mut output = String::new();
         let mut exited_at: Option<Instant> = None;

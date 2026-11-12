@@ -522,6 +522,7 @@ fn export_embeds_original_cover_and_verifies() {
     h.app.export(r.generation, vec![sel(id)]).unwrap();
     assert_eq!(exported(&h), vec!["中文_影片 — 第一集 (1).mp4", "中文_影片 — 第一集.mp4"]);
     assert_eq!(std::fs::read(&target).unwrap(), before);
+    assert!(h.log.lines().iter().all(|l| !l.contains("codec_name")), "ffprobe JSON stays out of the log");
     let progress: Vec<String> =
         h.events.lock().unwrap().iter().filter_map(|e| if let Event::Progress { progress } = e { Some(progress.stage.clone()) } else { None }).collect();
     for stage in ["傳輸 video.m4s", "檢查串流", "合併 MP4", "嵌入原始封面", "驗證影音完整性", "完成"] {

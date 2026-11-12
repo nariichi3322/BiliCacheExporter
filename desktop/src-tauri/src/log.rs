@@ -114,7 +114,10 @@ fn patterns() -> &'static Patterns {
 /// Drops metadata JSON, URL queries, device serials and the user profile path.
 pub fn redact(text: &str) -> String {
     let trimmed = text.trim_start();
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+    // A `[` line is dropped only when it is JSON (complete or cut off): FFmpeg errors (`[mov @ …] …`),
+    // ADB progress (`[ 45%] …`) and titles like `[MV] …` also start with `[` and must stay readable.
+    let json_array = || serde_json::from_str::<serde_json::Value>(trimmed).map_or_else(|e| e.is_eof(), |_| true);
+    if trimmed.starts_with('{') || (trimmed.starts_with('[') && json_array()) {
         return "[metadata omitted]".into();
     }
     let p = patterns();
@@ -135,6 +138,14 @@ mod tests {
     #[test]
     fn redacts_sensitive_values() {
         assert_eq!(redact("{\"url\":\"x\"}"), "[metadata omitted]");
+        for json in [r#"[{"url":"x"}]"#, r#"["a","b"]"#, "[1, 2]", "[", r#"  ["cut off","#, "{ broken"] {
+            assert_eq!(redact(json), "[metadata omitted]", "{json}");
+        }
+        for kept in ["[mov,mp4,m4a,3gp,3g2,mj2 @ 000001] moov atom not found", "[in#0 @ 0000] Error opening input", "[ 45%] /sdcard/a.m4s", "[MV] 歌：完成"]
+        {
+            assert_eq!(redact(kept), kept);
+        }
+        assert_eq!(redact("[tcp @ 01] failed https://a.b/c?sign=1"), "[tcp @ 01] failed https://a.b/c?[redacted]", "bracket lines still get masked");
         assert_eq!(redact("get https://a.b/c.m4s?sign=1&t=2 ok"), "get https://a.b/c.m4s?[redacted] ok");
         assert_eq!(redact(r#"> adb "-s" "R58N123" "shell""#), r#"> adb "-s" "[device]" "shell""#);
         assert_eq!(redact("R58N123\tdevice product:x"), "[device]\tdevice product:x");
