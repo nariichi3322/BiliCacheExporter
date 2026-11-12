@@ -213,6 +213,11 @@ impl App {
         }
     }
 
+    /// The configured output folder; the default while the settings file is unreadable, as in [`App::snapshot`].
+    pub fn output_dir(&self) -> String {
+        self.state.lock().unwrap().settings.as_ref().map_or_else(|| Settings::defaults().output, |s| s.output.clone())
+    }
+
     fn writable(&self) -> Out<()> {
         match &self.storage_error {
             Some(e) => Err(err(format!("{e}。請將整個程式資料夾移到可寫的位置後再開啟。"))),

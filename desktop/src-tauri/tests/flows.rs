@@ -71,6 +71,7 @@ fn corrupt_settings_are_reported_not_replaced() {
     let h = harness_in(dir.clone(), Phone::one_device(), no_network());
     let snap = h.app.snapshot();
     assert!(snap.settings_error.unwrap().contains("設定檔損壞"));
+    assert_eq!(h.app.output_dir(), snap.settings.output, "the output folder falls back to the same default as the snapshot");
     let i = SettingsInput {
         adb: String::new(),
         ffmpeg: String::new(),
